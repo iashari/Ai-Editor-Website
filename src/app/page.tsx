@@ -676,9 +676,8 @@ export default function EditorPage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
             </button>
             <div className="relative" ref={exportMenuRef}>
-              <button onClick={() => setShowExportMenu(!showExportMenu)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium tracking-wide transition-all duration-300 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Export">
+              <button onClick={() => setShowExportMenu(!showExportMenu)} className={`p-2 rounded-xl transition-all duration-300 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Export">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                <span>Export</span>
               </button>
               {showExportMenu && (
                 <div className={`absolute top-full mt-2 left-1/2 -translate-x-1/2 w-44 rounded-xl border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-[#e8e4dc]'}`}>
