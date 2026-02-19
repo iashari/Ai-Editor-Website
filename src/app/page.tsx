@@ -183,7 +183,7 @@ export default function EditorPage() {
     setSaveStatus('saved')
   }, [currentDocId, documentContent, docTitle])
 
-  function exportAs(format: 'txt' | 'md' | 'html' | 'pdf') {
+  function exportAs(format: 'txt' | 'md' | 'html' | 'doc' | 'pdf') {
     const title = docTitle || 'document'
     const content = documentContent || ''
     setShowExportMenu(false)
@@ -206,6 +206,18 @@ export default function EditorPage() {
       const html = `<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>${title}</title>\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;line-height:1.7;color:#1a1a1a}h1,h2,h3{margin-top:1.5em}p{margin:0.5em 0}</style>\n</head>\n<body>\n${htmlBody}\n</body>\n</html>`
       const blob = new Blob([html], { type: 'text/html' })
       downloadBlob(blob, `${title}.html`)
+    } else if (format === 'doc') {
+      const lines = content.split('\n')
+      const htmlBody = lines.map((line) => {
+        if (!line.trim()) return '<br/>'
+        if (line.startsWith('# ')) return `<h1>${line.slice(2)}</h1>`
+        if (line.startsWith('## ')) return `<h2>${line.slice(3)}</h2>`
+        if (line.startsWith('### ')) return `<h3>${line.slice(4)}</h3>`
+        return `<p>${line}</p>`
+      }).join('\n')
+      const doc = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><title>${title}</title><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.6;color:#1a1a1a;margin:2cm}h1{font-size:20pt;font-weight:700;margin:16px 0 8px}h2{font-size:16pt;font-weight:600;margin:14px 0 6px}h3{font-size:13pt;font-weight:600;margin:12px 0 4px}p{margin:4px 0}</style></head><body>${htmlBody}</body></html>`
+      const blob = new Blob(['\ufeff' + doc], { type: 'application/msword' })
+      downloadBlob(blob, `${title}.doc`)
     } else if (format === 'pdf') {
       const lines = content.split('\n')
       const htmlBody = lines.map((line) => {
@@ -675,6 +687,7 @@ export default function EditorPage() {
                     { format: 'txt' as const, label: 'Plain Text', ext: '.txt' },
                     { format: 'md' as const, label: 'Markdown', ext: '.md' },
                     { format: 'html' as const, label: 'HTML', ext: '.html' },
+                    { format: 'doc' as const, label: 'Word Document', ext: '.doc' },
                     { format: 'pdf' as const, label: 'PDF', ext: '.pdf' },
                   ]).map((opt) => (
                     <button
