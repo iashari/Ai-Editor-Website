@@ -138,6 +138,18 @@ export default function EditorPage() {
       setCurrentDocId(data[0].id)
       setDocTitle(data[0].title)
       pushHistory(data[0].content)
+    } else {
+      // Auto-create first document for new users
+      const { data: { user: currentUser } } = await getSupabaseClient().auth.getUser()
+      if (currentUser) {
+        const { data: newDoc } = await getSupabaseClient().from('documents').insert({ user_id: currentUser.id, title: 'Untitled Document', content: '' }).select().single()
+        if (newDoc) {
+          setDocuments([newDoc])
+          setCurrentDocId(newDoc.id)
+          setDocTitle(newDoc.title)
+          pushHistory(newDoc.content)
+        }
+      }
     }
   }
 
@@ -178,11 +190,14 @@ export default function EditorPage() {
     setTimeout(() => setSaveStatus('saved'), 2500)
   }, [pushHistory])
 
-  const handleAIUpdate = useCallback((newContent: string) => {
+  const handleAIUpdate = useCallback(async (newContent: string) => {
     pushHistory(newContent)
-    setSaveStatus('unsaved')
-    setTimeout(() => setSaveStatus('saved'), 2500)
-  }, [pushHistory])
+    if (currentDocId) {
+      setSaveStatus('saving')
+      await getSupabaseClient().from('documents').update({ content: newContent, updated_at: new Date().toISOString() }).eq('id', currentDocId)
+      setSaveStatus('saved')
+    }
+  }, [pushHistory, currentDocId])
 
   const handleSave = useCallback(async () => {
     if (!currentDocId) return
