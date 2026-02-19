@@ -680,6 +680,14 @@ export default function EditorPage() {
             <input
               value={docTitle}
               onChange={(e) => setDocTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+              onBlur={async () => {
+                if (!currentDocId) return
+                setSaveStatus('saving')
+                await getSupabaseClient().from('documents').update({ title: docTitle, updated_at: new Date().toISOString() }).eq('id', currentDocId)
+                setDocuments((prev) => prev.map((d) => d.id === currentDocId ? { ...d, title: docTitle } : d))
+                setSaveStatus('saved')
+              }}
               className={`text-sm font-semibold bg-transparent border-none focus:outline-none focus:ring-1 rounded-lg px-2 py-1 tracking-tight ${isDark ? 'text-neutral-100 focus:ring-neutral-600' : 'text-[#2d2a26] focus:ring-[#e8e4dc]'}`}
               style={{ minWidth: '120px' }}
             />
