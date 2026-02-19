@@ -209,6 +209,13 @@ The document has been updated successfully. Confirm the change to the user conci
   } catch (error: unknown) {
     console.error('AI Editor API error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
+    const isRateLimit = message.toLowerCase().includes('rate') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('429') || message.toLowerCase().includes('resource has been exhausted')
+    if (isRateLimit) {
+      return jsonResponse(
+        { error: 'AI rate limit reached', details: 'The AI model has reached its usage limit. Please wait a moment and try again.' },
+        { status: 429 }
+      )
+    }
     return jsonResponse(
       { error: 'Failed to process request', details: message },
       { status: 500 }

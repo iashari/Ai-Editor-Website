@@ -70,7 +70,11 @@ export default function AIChat({ documentContent, onDocumentUpdate, isDark = tru
       setSelectedFile(null)
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error'
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${errMsg}` }])
+      const isLimit = errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('usage limit') || errMsg.toLowerCase().includes('wait')
+      const displayMsg = isLimit
+        ? '⚠️ AI rate limit reached. Please wait a moment and try again.'
+        : `Error: ${errMsg}`
+      setMessages((prev) => [...prev, { role: 'assistant', content: displayMsg }])
     } finally {
       setIsLoading(false)
       inputRef.current?.focus()
