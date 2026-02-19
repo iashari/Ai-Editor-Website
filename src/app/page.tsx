@@ -90,16 +90,24 @@ export default function EditorPage() {
   const emailInputRef = useRef<HTMLInputElement>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showFileNav, setShowFileNav] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [displayName, setDisplayName] = useState('')
+  const [editNameValue, setEditNameValue] = useState('')
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const fileNavRef = useRef<HTMLDivElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getSupabaseClient().auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+      const u = session?.user ?? null
+      setUser(u)
+      setDisplayName(u?.user_metadata?.full_name || u?.email?.split('@')[0] || '')
       setAuthLoading(false)
     })
     const { data: { subscription } } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+      const u = session?.user ?? null
+      setUser(u)
+      setDisplayName(u?.user_metadata?.full_name || u?.email?.split('@')[0] || '')
       setAuthLoading(false)
     })
     return () => subscription.unsubscribe()
@@ -309,6 +317,25 @@ export default function EditorPage() {
     setDocuments([])
     setCurrentDocId(null)
     pushHistory('')
+  }
+
+  function startEditingName() {
+    setEditNameValue(displayName)
+    setEditingName(true)
+    setTimeout(() => nameInputRef.current?.select(), 0)
+  }
+
+  async function saveDisplayName() {
+    const trimmed = editNameValue.trim()
+    if (!trimmed || trimmed === displayName) {
+      setEditingName(false)
+      return
+    }
+    const { error } = await getSupabaseClient().auth.updateUser({ data: { full_name: trimmed } })
+    if (!error) {
+      setDisplayName(trimmed)
+    }
+    setEditingName(false)
   }
 
   function switchAuthMode(mode: 'login' | 'signup') {
@@ -763,7 +790,22 @@ export default function EditorPage() {
               </div>
             </button>
             <div className={`w-px h-5 ${isDark ? 'bg-neutral-800' : 'bg-[#e8e4dc]'}`} />
-            <span className={`text-xs tracking-wide ${isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}>{user.email?.split('@')[0]}</span>
+            {editingName ? (
+              <input
+                ref={nameInputRef}
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveDisplayName(); if (e.key === 'Escape') setEditingName(false) }}
+                onBlur={saveDisplayName}
+                className={`text-xs tracking-wide w-24 px-1.5 py-0.5 rounded-md border outline-none ${isDark ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400' : 'bg-white text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'}`}
+                maxLength={30}
+                autoFocus
+              />
+            ) : (
+              <button onClick={startEditingName} className={`text-xs tracking-wide hover:underline cursor-pointer ${isDark ? 'text-neutral-500 hover:text-neutral-300' : 'text-[#9c958a] hover:text-[#5c574e]'}`} title="Click to edit name">
+                {displayName || user.email?.split('@')[0]}
+              </button>
+            )}
             <button onClick={handleSignOut} className={`text-xs tracking-wide px-3 py-1.5 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800' : 'text-[#9c958a] hover:text-[#5c574e] hover:bg-[#f5f2ed]'}`}>Sign Out</button>
           </div>
         </div>
