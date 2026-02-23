@@ -3,9 +3,20 @@
 import { useEffect, useRef } from 'react'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 
-export function useAutoSave(documentId: string | null, content: string) {
+type SaveStatus = 'saving' | 'saved' | 'error'
+
+export function useAutoSave(
+  documentId: string | null,
+  content: string,
+  onSaveStatusChange?: (status: SaveStatus) => void
+) {
   const savedContentRef = useRef(content)
   const timeoutRef = useRef<NodeJS.Timeout>(undefined)
+  const callbackRef = useRef(onSaveStatusChange)
+
+  useEffect(() => {
+    callbackRef.current = onSaveStatusChange
+  }, [onSaveStatusChange])
 
   useEffect(() => {
     if (!documentId) return
@@ -16,12 +27,26 @@ export function useAutoSave(documentId: string | null, content: string) {
     }
 
     timeoutRef.current = setTimeout(async () => {
-      await getSupabaseClient()
-        .from('documents')
-        .update({ content, updated_at: new Date().toISOString() })
-        .eq('id', documentId)
+      try {
+        callbackRef.current?.('saving')
+        const { error } = await getSupabaseClient()
+          .from('documents')
+          .update({ content, updated_at: new Date().toISOString() })
+          .eq('id', documentId)
 
-      savedContentRef.current = content
+        if (error) {
+          callbackRef.current?.('error')
+          return
+        }
+
+        savedContentRef.current = content
+        callbackRef.current?.('saved')
+      } catch (err) {
+        if (err instanceof Error) {
+          console.error('Auto-save failed:', err.message)
+        }
+        callbackRef.current?.('error')
+      }
     }, 2000)
 
     return () => {
