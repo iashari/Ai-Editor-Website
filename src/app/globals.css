@@ -62,41 +62,6 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-/* Animations */
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes scale-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.animate-fade-in-up {
-  animation: fade-in-up 0.5s ease-out;
-  will-change: transform, opacity;
-  backface-visibility: hidden;
-}
-
-.animate-scale-in {
-  animation: scale-in 0.5s ease-out;
-  will-change: transform, opacity;
-  backface-visibility: hidden;
-}
-
 .animate-spin {
   will-change: transform;
   transform: translateZ(0);
@@ -107,4 +72,84 @@ select:focus-visible {
   will-change: transform;
   transform: translateZ(0);
   backface-visibility: hidden;
+}
+
+/* ── Global button & interactive transitions (spring press) ── */
+button, label[class*="cursor-pointer"], a {
+  transition:
+    transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+button:active:not(:disabled), label[class*="cursor-pointer"]:active {
+  transform: scale(0.9);
+  transition:
+    transform 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+/* ── Clickable list items & interactive containers (spring press) ── */
+[role="button"],
+div[class*="cursor-pointer"],
+li[class*="cursor-pointer"] {
+  transition:
+    transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.2s ease,
+    background-color 0.2s ease;
+}
+
+[role="button"]:active,
+div[class*="cursor-pointer"]:active,
+li[class*="cursor-pointer"]:active {
+  transform: scale(0.97);
+  transition:
+    transform 0.1s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    background-color 0.2s ease;
+}
+
+/* shake — validation error */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-8px); }
+  20% { transform: translateX(7px); }
+  30% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  50% { transform: translateX(-3px); }
+  60% { transform: translateX(2px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* ── Smooth theme transition on all elements ── */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    fill 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    stroke 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* ── Theme circular wipe (View Transition API) ── */
+::view-transition-old(root) {
+  animation: none;
+  z-index: -1;
+}
+
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }

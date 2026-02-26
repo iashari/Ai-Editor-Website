@@ -1,5 +1,16 @@
 import { getSupabaseClient } from './supabaseClient'
 
+export interface Document {
+  id: string
+  title: string
+  content: string
+  user_id: string
+  created_at: string
+  updated_at: string
+}
+
+export type DocumentSummary = Pick<Document, 'id' | 'title' | 'content' | 'created_at' | 'updated_at'>
+
 export interface DocumentTag {
   id: string
   document_id: string
@@ -8,6 +19,46 @@ export interface DocumentTag {
 }
 
 export type SortOption = 'updated_desc' | 'updated_asc' | 'title_asc' | 'title_desc' | 'created_desc'
+
+// ─── CRUD Operations ───────────────────────────────────────────────────────
+
+export async function createDocument(
+  userId: string,
+  title: string = 'Untitled Document'
+): Promise<DocumentSummary> {
+  const { data, error } = await getSupabaseClient()
+    .from('documents')
+    .insert({ user_id: userId, title, content: '' })
+    .select('id, title, content, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function renameDocument(
+  documentId: string,
+  newTitle: string
+): Promise<void> {
+  const trimmed = newTitle.trim()
+  if (!trimmed) throw new Error('Title cannot be empty')
+
+  const { error } = await getSupabaseClient()
+    .from('documents')
+    .update({ title: trimmed, updated_at: new Date().toISOString() })
+    .eq('id', documentId)
+
+  if (error) throw error
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('documents')
+    .delete()
+    .eq('id', documentId)
+
+  if (error) throw error
+}
 
 const SORT_CONFIG: Record<SortOption, { column: string; ascending: boolean }> = {
   updated_desc: { column: 'updated_at', ascending: false },
@@ -20,11 +71,12 @@ const SORT_CONFIG: Record<SortOption, { column: string; ascending: boolean }> = 
 const PAGE_SIZE = 20
 
 export async function fetchDocuments(options: {
+  userId: string
   search?: string
   sort?: SortOption
   page?: number
 }) {
-  const { search, sort = 'updated_desc', page = 0 } = options
+  const { userId, search, sort = 'updated_desc', page = 0 } = options
   const { column, ascending } = SORT_CONFIG[sort]
   const from = page * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
@@ -32,6 +84,7 @@ export async function fetchDocuments(options: {
   let query = getSupabaseClient()
     .from('documents')
     .select('id, title, content, created_at, updated_at', { count: 'exact' })
+    .eq('user_id', userId)
     .order(column, { ascending })
     .range(from, to)
 

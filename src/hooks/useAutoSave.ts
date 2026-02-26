@@ -27,6 +27,8 @@ export function useAutoSave(
     }
 
     timeoutRef.current = setTimeout(async () => {
+      if (!navigator.onLine) return
+
       try {
         callbackRef.current?.('saving')
         const { error } = await getSupabaseClient()
@@ -41,10 +43,7 @@ export function useAutoSave(
 
         savedContentRef.current = content
         callbackRef.current?.('saved')
-      } catch (err) {
-        if (err instanceof Error) {
-          console.error('Auto-save failed:', err.message)
-        }
+      } catch {
         callbackRef.current?.('error')
       }
     }, 2000)

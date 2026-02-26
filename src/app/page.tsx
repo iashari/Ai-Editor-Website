@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, type MouseEvent as ReactMouseEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import DocumentEditor from '@/components/DocumentEditor'
 import AIChat from '@/components/AIChat'
@@ -9,8 +10,11 @@ import EditorNavbar from '@/components/EditorNavbar'
 import DocumentSidebar from '@/components/DocumentSidebar'
 import { useAuth } from '@/components/AuthProvider'
 import { getSupabaseClient } from '@/lib/supabaseClient'
+import { createDocument, deleteDocument as deleteDoc } from '@/lib/documents'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { useRealtimeDocument } from '@/hooks/useRealtimeDocument'
+import { motion, AnimatePresence } from '@/components/animations/MotionDiv'
+import { saveVersion } from '@/lib/versionHistory'
 
 function useHistory(initialContent: string) {
   const [history, setHistory] = useState<string[]>([initialContent])
@@ -59,6 +63,7 @@ export interface Document {
 
 export default function EditorPage() {
   const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
   const [documents, setDocuments] = useState<Document[]>([])
   const [currentDocId, setCurrentDocId] = useState<string | null>(null)
   const [docTitle, setDocTitle] = useState('Untitled Document')
@@ -67,6 +72,66 @@ export default function EditorPage() {
   const [displayName, setDisplayName] = useState('')
   const [showSidebar, setShowSidebar] = useState(true)
   const { current: documentContent, push: pushHistory, undo, redo, canUndo, canRedo } = useHistory('')
+
+  // Theme transition (circular wipe + smooth color transitions)
+  const handleThemeToggle = useCallback((e: ReactMouseEvent) => {
+    const x = e.clientX
+    const y = e.clientY
+    const maxRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    )
+
+    // Enable smooth color transitions on all elements
+    document.documentElement.classList.add('theme-transition')
+
+    // Fallback for browsers without View Transition API
+    const doc = document as unknown as { startViewTransition?: (cb: () => void) => { ready: Promise<void> } }
+    if (!doc.startViewTransition) {
+      setIsDark((prev) => !prev)
+      setTimeout(() => document.documentElement.classList.remove('theme-transition'), 700)
+      return
+    }
+
+    const transition = doc.startViewTransition(() => {
+      setIsDark((prev) => !prev)
+    })
+
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${maxRadius}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration: 600,
+          easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+          pseudoElement: '::view-transition-new(root)',
+        }
+      )
+
+      // Remove transition class after animation settles
+      setTimeout(() => document.documentElement.classList.remove('theme-transition'), 700)
+    })
+  }, [])
+
+  // Sync html class for CSS variable-based theme (body bg, scrollbar, selection)
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark)
+  }, [isDark])
+
+  // Redirect to returnUrl after login (e.g. from shared edit page)
+  useEffect(() => {
+    if (user && !authLoading) {
+      const params = new URLSearchParams(window.location.search)
+      const returnUrl = params.get('returnUrl')
+      if (returnUrl && returnUrl.startsWith('/shared/')) {
+        router.push(returnUrl)
+      }
+    }
+  }, [user, authLoading, router])
 
   useEffect(() => {
     if (user) {
@@ -84,16 +149,24 @@ export default function EditorPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documents, currentDocId])
 
+  // Sync docTitle when the current document is renamed in sidebar
+  useEffect(() => {
+    if (!currentDocId) return
+    const currentDoc = documents.find((d) => d.id === currentDocId)
+    if (currentDoc && currentDoc.title !== docTitle) {
+      setDocTitle(currentDoc.title)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documents, currentDocId])
+
   async function createNewDocument() {
     if (!user) return
     try {
-      const { data, error } = await getSupabaseClient().from('documents').insert({ user_id: user.id, title: 'Untitled Document', content: '' }).select().single()
-      if (data && !error) {
-        setDocuments((prev) => [data, ...prev])
-        setCurrentDocId(data.id)
-        setDocTitle(data.title)
-        pushHistory(data.content)
-      }
+      const data = await createDocument(user.id)
+      setDocuments((prev) => [data, ...prev])
+      setCurrentDocId(data.id)
+      setDocTitle(data.title)
+      pushHistory(data.content)
     } catch (err) {
       if (err instanceof Error) console.error('createNewDocument failed:', err.message)
     }
@@ -105,14 +178,10 @@ export default function EditorPage() {
     pushHistory(doc.content)
   }
 
-  async function deleteDocument(docId: string) {
+  async function handleDeleteDocument(docId: string) {
     if (documents.length <= 1) return
     try {
-      const { error } = await getSupabaseClient().from('documents').delete().eq('id', docId)
-      if (error) {
-        console.error('Failed to delete document:', error.message)
-        return
-      }
+      await deleteDoc(docId)
       const remaining = documents.filter((d) => d.id !== docId)
       setDocuments(remaining)
       if (currentDocId === docId && remaining.length > 0) {
@@ -123,7 +192,21 @@ export default function EditorPage() {
     }
   }
 
-  useAutoSave(currentDocId, documentContent, (status) => setSaveStatus(status))
+  // Auto-save versions throttled to max once every 5 minutes
+  const lastVersionTimeRef = useRef(0)
+  const VERSION_INTERVAL = 5 * 60 * 1000 // 5 minutes
+
+  useAutoSave(currentDocId, documentContent, (status) => {
+    setSaveStatus(status)
+    // On successful auto-save, also save a version if enough time has passed
+    if (status === 'saved' && currentDocId && user) {
+      const now = Date.now()
+      if (now - lastVersionTimeRef.current >= VERSION_INTERVAL) {
+        lastVersionTimeRef.current = now
+        saveVersion(currentDocId, user.id, docTitle, documentContent).catch(() => {})
+      }
+    }
+  })
   useRealtimeDocument(currentDocId, (content) => pushHistory(content))
 
   const handleContentChange = useCallback((newContent: string) => {
@@ -146,16 +229,36 @@ export default function EditorPage() {
   }, [pushHistory, currentDocId])
 
   const handleSave = useCallback(async () => {
-    if (!currentDocId) return
+    if (!currentDocId || !user) return
     try {
       setSaveStatus('saving')
       const { error } = await getSupabaseClient().from('documents').update({ content: documentContent, title: docTitle, updated_at: new Date().toISOString() }).eq('id', currentDocId)
       setSaveStatus(error ? 'error' : 'saved')
+      // Save a version snapshot on manual save (always, bypass throttle)
+      if (!error) {
+        lastVersionTimeRef.current = Date.now()
+        saveVersion(currentDocId, user.id, docTitle, documentContent).catch(() => {})
+      }
     } catch (err) {
       if (err instanceof Error) console.error('Manual save failed:', err.message)
       setSaveStatus('error')
     }
-  }, [currentDocId, documentContent, docTitle])
+  }, [currentDocId, user, documentContent, docTitle])
+
+  const handleVersionRestore = useCallback(async (content: string, title: string) => {
+    pushHistory(content)
+    setDocTitle(title)
+    if (currentDocId) {
+      try {
+        setSaveStatus('saving')
+        const { error } = await getSupabaseClient().from('documents').update({ content, title, updated_at: new Date().toISOString() }).eq('id', currentDocId)
+        setSaveStatus(error ? 'error' : 'saved')
+      } catch (err) {
+        if (err instanceof Error) console.error('Version restore save failed:', err.message)
+        setSaveStatus('error')
+      }
+    }
+  }, [currentDocId, pushHistory])
 
   function exportAs(format: 'txt' | 'md' | 'html' | 'doc' | 'pdf') {
     const title = docTitle || 'document'
@@ -235,10 +338,15 @@ export default function EditorPage() {
       <div className="h-screen flex items-center justify-center bg-neutral-950">
         <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px] pointer-events-none" />
         <div className="fixed inset-0 bg-gradient-to-b from-neutral-950 via-transparent to-neutral-950 pointer-events-none" />
-        <div className="relative z-10 text-center">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className="relative z-10 text-center"
+        >
           <div className="w-10 h-10 border-2 border-neutral-700 border-t-white rounded-full animate-spin mx-auto mb-4" />
           <p className="text-neutral-400 text-sm tracking-wide">Loading editor...</p>
-        </div>
+        </motion.div>
       </div>
     )
   }
@@ -259,6 +367,7 @@ export default function EditorPage() {
         setSaveStatus={setSaveStatus}
         isDark={isDark}
         setIsDark={setIsDark}
+        onThemeToggle={handleThemeToggle}
         undo={undo}
         redo={redo}
         canUndo={canUndo}
@@ -267,7 +376,7 @@ export default function EditorPage() {
         setDocuments={setDocuments}
         onCreateDocument={createNewDocument}
         onSelectDocument={selectDocument}
-        onDeleteDocument={deleteDocument}
+        onDeleteDocument={handleDeleteDocument}
         onExport={exportAs}
         onSignOut={handleSignOut}
         displayName={displayName}
@@ -275,25 +384,34 @@ export default function EditorPage() {
         userId={user.id}
         onSidebarToggle={() => setShowSidebar(!showSidebar)}
         showSidebar={showSidebar}
+        onVersionRestore={handleVersionRestore}
       />
 
       {/* Main content: Sidebar + Editor + AI Chat */}
       <div className="flex-1 overflow-hidden flex">
         {/* Collapsible sidebar */}
-        {showSidebar && (
-          <div className="w-64 shrink-0">
-            <DocumentSidebar
-              documents={documents}
-              setDocuments={setDocuments}
-              currentDocId={currentDocId}
-              onSelectDocument={selectDocument}
-              onCreateDocument={createNewDocument}
-              onDeleteDocument={deleteDocument}
-              isDark={isDark}
-              userId={user.id}
-            />
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {showSidebar && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 256, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="shrink-0 overflow-hidden"
+            >
+              <DocumentSidebar
+                documents={documents}
+                setDocuments={setDocuments}
+                currentDocId={currentDocId}
+                onSelectDocument={selectDocument}
+                onCreateDocument={createNewDocument}
+                onDeleteDocument={handleDeleteDocument}
+                isDark={isDark}
+                userId={user.id}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Editor + AI Chat panels */}
         <div className="flex-1 overflow-hidden">
@@ -301,13 +419,14 @@ export default function EditorPage() {
             <Panel defaultSize={50} minSize={25}>
               <DocumentEditor key={`editor-${currentDocId}`} content={documentContent} onChange={handleContentChange} onUndo={undo} onRedo={redo} onSave={handleSave} isDark={isDark} />
             </Panel>
-            <Separator className={`w-1 transition-colors duration-300 ${isDark ? 'bg-neutral-800 hover:bg-neutral-600' : 'bg-[#e8e4dc] hover:bg-[#ddd8ce]'}`} />
+            <Separator className={`w-1 transition-colors duration-300 ${isDark ? 'bg-neutral-800 hover:bg-neutral-600' : 'bg-[#d5d0c8] hover:bg-[#c5c0b8] border-x border-[#c5c0b8]'}`} />
             <Panel defaultSize={50} minSize={25}>
-              <AIChat key={`chat-${currentDocId}`} documentContent={documentContent} onDocumentUpdate={handleAIUpdate} isDark={isDark} />
+              <AIChat key={`chat-${currentDocId}`} documentContent={documentContent} onDocumentUpdate={handleAIUpdate} isDark={isDark} documentId={currentDocId} userId={user.id} />
             </Panel>
           </Group>
         </div>
       </div>
+
     </div>
   )
 }

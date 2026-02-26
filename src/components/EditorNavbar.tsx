@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import ShareDialog from './ShareDialog'
 import ConfirmDialog from './ConfirmDialog'
+import VersionHistoryDialog from './VersionHistoryDialog'
+import { motion, AnimatePresence } from './animations/MotionDiv'
 
 interface Document {
   id: string
@@ -19,6 +21,7 @@ interface EditorNavbarProps {
   setSaveStatus: (status: 'saved' | 'saving' | 'unsaved' | 'error') => void
   isDark: boolean
   setIsDark: (dark: boolean) => void
+  onThemeToggle?: (e: React.MouseEvent) => void
   undo: () => void
   redo: () => void
   canUndo: boolean
@@ -35,6 +38,7 @@ interface EditorNavbarProps {
   userId: string
   onSidebarToggle?: () => void
   showSidebar?: boolean
+  onVersionRestore?: (content: string, title: string) => void
 }
 
 export default function EditorNavbar({
@@ -45,6 +49,7 @@ export default function EditorNavbar({
   setSaveStatus,
   isDark,
   setIsDark,
+  onThemeToggle,
   undo,
   redo,
   canUndo,
@@ -61,8 +66,10 @@ export default function EditorNavbar({
   userId,
   onSidebarToggle,
   showSidebar,
+  onVersionRestore,
 }: EditorNavbarProps) {
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [showFileNav, setShowFileNav] = useState(false)
   const [showShareDialog, setShowShareDialog] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -104,6 +111,14 @@ export default function EditorNavbar({
     setEditingName(false)
   }
 
+  const dropdownVariants = {
+    initial: { opacity: 0, y: 8, scale: 0.96 },
+    animate: { opacity: 1, y: 0, scale: 1 },
+    exit: { opacity: 0, y: 6, scale: 0.97 },
+  }
+
+  const dropdownTransition = { duration: 0.2, ease: [0.16, 1, 0.3, 1] as const }
+
   return (
     <>
     <div className="relative">
@@ -123,10 +138,6 @@ export default function EditorNavbar({
               </svg>
             </button>
           )}
-          <div className={`p-2 rounded-xl ${isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-          </div>
-          <div className={`w-px h-5 ${isDark ? 'bg-neutral-800' : 'bg-[#e8e4dc]'}`} />
           <input
             value={docTitle}
             onChange={(e) => setDocTitle(e.target.value)}
@@ -167,82 +178,104 @@ export default function EditorNavbar({
           <button onClick={redo} disabled={!canRedo} className={`p-2 rounded-xl transition-all duration-300 disabled:opacity-20 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Redo">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
           </button>
+          <button onClick={() => setShowVersionHistory(true)} disabled={!currentDocId} className={`p-2 rounded-xl transition-all duration-300 disabled:opacity-20 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Version History">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+          </button>
           <div className="relative" ref={exportMenuRef}>
             <button onClick={() => setShowExportMenu(!showExportMenu)} className={`p-2 rounded-xl transition-all duration-300 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Export">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </button>
-            {showExportMenu && (
-              <div className={`absolute top-full mt-2 left-1/2 -translate-x-1/2 w-44 rounded-xl border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-[#e8e4dc]'}`}>
-                <p className={`px-3 py-2 text-xs font-medium tracking-wide ${isDark ? 'text-neutral-500 border-b border-neutral-800' : 'text-[#9c958a] border-b border-[#e8e4dc]'}`}>Export as</p>
-                {([
-                  { format: 'txt' as const, label: 'Plain Text', ext: '.txt' },
-                  { format: 'md' as const, label: 'Markdown', ext: '.md' },
-                  { format: 'html' as const, label: 'HTML', ext: '.html' },
-                  { format: 'doc' as const, label: 'Word Document', ext: '.doc' },
-                  { format: 'pdf' as const, label: 'PDF', ext: '.pdf' },
-                ]).map((opt) => (
-                  <button
-                    key={opt.format}
-                    onClick={() => { onExport(opt.format); setShowExportMenu(false) }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors ${isDark ? 'text-neutral-300 hover:bg-neutral-800' : 'text-[#2d2a26] hover:bg-[#f5f2ed]'}`}
-                  >
-                    <span>{opt.label}</span>
-                    <span className={`text-xs ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}>{opt.ext}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <AnimatePresence>
+              {showExportMenu && (
+                <motion.div
+                  variants={dropdownVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={dropdownTransition}
+                  className={`absolute top-full mt-2 left-1/2 -translate-x-1/2 w-44 rounded-xl border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-[#f5f2ed] border-[#d5d0c8]'}`}
+                >
+                  <p className={`px-3 py-2 text-xs font-medium tracking-wide ${isDark ? 'text-neutral-500 border-b border-neutral-800' : 'text-[#9c958a] border-b border-[#e8e4dc]'}`}>Export as</p>
+                  {([
+                    { format: 'txt' as const, label: 'Plain Text', ext: '.txt' },
+                    { format: 'md' as const, label: 'Markdown', ext: '.md' },
+                    { format: 'html' as const, label: 'HTML', ext: '.html' },
+                    { format: 'doc' as const, label: 'Word Document', ext: '.doc' },
+                    { format: 'pdf' as const, label: 'PDF', ext: '.pdf' },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.format}
+                      onClick={() => { onExport(opt.format); setShowExportMenu(false) }}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors ${isDark ? 'text-neutral-300 hover:bg-neutral-800' : 'text-[#2d2a26] hover:bg-[#f5f2ed]'}`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className={`text-xs ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}>{opt.ext}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <div className="relative" ref={fileNavRef}>
             <button onClick={() => setShowFileNav(!showFileNav)} className={`p-2 rounded-xl transition-all duration-300 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Documents">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
             </button>
-            {showFileNav && (
-              <div className={`absolute top-full mt-2 right-0 w-64 rounded-xl border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-[#e8e4dc]'}`}>
-                <div className={`flex items-center justify-between px-3 py-2.5 border-b ${isDark ? 'border-neutral-800' : 'border-[#e8e4dc]'}`}>
-                  <p className={`text-xs font-medium tracking-wide ${isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}>Documents ({documents.length})</p>
-                  <button
-                    onClick={() => { onCreateDocument(); setShowFileNav(false) }}
-                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 ${isDark ? 'bg-white text-black' : 'bg-[#2d2a26] text-white'}`}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    New
-                  </button>
-                </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {documents.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className={`flex items-center justify-between px-3 py-2.5 transition-colors cursor-pointer group ${
-                        doc.id === currentDocId
-                          ? isDark ? 'bg-neutral-800/60' : 'bg-[#f5f2ed]'
-                          : isDark ? 'hover:bg-neutral-800/40' : 'hover:bg-[#faf8f5]'
-                      }`}
-                      onClick={() => { onSelectDocument(doc); setShowFileNav(false) }}
+            <AnimatePresence>
+              {showFileNav && (
+                <motion.div
+                  variants={dropdownVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={dropdownTransition}
+                  className={`absolute top-full mt-2 right-0 w-64 rounded-xl border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-[#f5f2ed] border-[#d5d0c8]'}`}
+                >
+                  <div className={`flex items-center justify-between px-3 py-2.5 border-b ${isDark ? 'border-neutral-800' : 'border-[#e8e4dc]'}`}>
+                    <p className={`text-xs font-medium tracking-wide ${isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}>Documents ({documents.length})</p>
+                    <button
+                      onClick={() => { onCreateDocument(); setShowFileNav(false) }}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all duration-300 hover:scale-105 active:scale-95"
+                      style={{ backgroundColor: isDark ? '#ffffff' : '#2d2a26', color: isDark ? '#000000' : '#ffffff' }}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${doc.id === currentDocId ? (isDark ? 'text-white' : 'text-[#2d2a26]') : (isDark ? 'text-neutral-600' : 'text-[#9c958a]')}`}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                        <span className={`text-sm truncate ${doc.id === currentDocId ? (isDark ? 'text-white font-medium' : 'text-[#2d2a26] font-medium') : (isDark ? 'text-neutral-400' : 'text-[#5c574e]')}`}>
-                          {doc.title}
-                        </span>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      New
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {documents.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className={`flex items-center justify-between px-3 py-2.5 transition-colors cursor-pointer group ${
+                          doc.id === currentDocId
+                            ? isDark ? 'bg-neutral-800/60' : 'bg-[#f5f2ed]'
+                            : isDark ? 'hover:bg-neutral-800/40' : 'hover:bg-[#faf8f5]'
+                        }`}
+                        onClick={() => { onSelectDocument(doc); setShowFileNav(false) }}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${doc.id === currentDocId ? (isDark ? 'text-white' : 'text-[#2d2a26]') : (isDark ? 'text-neutral-600' : 'text-[#9c958a]')}`}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                          <span className={`text-sm truncate ${doc.id === currentDocId ? (isDark ? 'text-white font-medium' : 'text-[#2d2a26] font-medium') : (isDark ? 'text-neutral-400' : 'text-[#5c574e]')}`}>
+                            {doc.title}
+                          </span>
+                        </div>
+                        {documents.length > 1 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(doc.id); setShowFileNav(false) }}
+                            className={`opacity-0 group-hover:opacity-100 p-1 rounded-lg transition-all ${isDark ? 'text-neutral-600 hover:text-red-400 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-red-500 hover:bg-red-50'}`}
+                            title="Delete"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                          </button>
+                        )}
                       </div>
-                      {documents.length > 1 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(doc.id); setShowFileNav(false) }}
-                          className={`opacity-0 group-hover:opacity-100 p-1 rounded-lg transition-all ${isDark ? 'text-neutral-600 hover:text-red-400 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-red-500 hover:bg-red-50'}`}
-                          title="Delete"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {documents.length === 0 && (
-                    <p className={`text-center py-6 text-sm ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}>No documents yet</p>
-                  )}
-                </div>
-              </div>
-            )}
+                    ))}
+                    {documents.length === 0 && (
+                      <p className={`text-center py-6 text-sm ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}>No documents yet</p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <button
             onClick={() => currentDocId && setShowShareDialog(true)}
@@ -256,7 +289,7 @@ export default function EditorNavbar({
 
         {/* Right - Theme + User */}
         <div className="flex items-center gap-3">
-          <button onClick={() => setIsDark(!isDark)} className="relative rounded-full transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden" style={{ width: 48, height: 24, backgroundColor: isDark ? '#262626' : '#e5e5e5' }} title="Toggle theme">
+          <button onClick={(e) => onThemeToggle ? onThemeToggle(e) : setIsDark(!isDark)} className="relative rounded-full transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden" style={{ width: 48, height: 24, backgroundColor: isDark ? '#262626' : '#e5e5e5' }} title="Toggle theme">
             <div className="absolute rounded-full shadow-md transition-transform duration-300 flex items-center justify-center" style={{ width: 16, height: 16, top: 4, left: 4, transform: `translateX(${isDark ? 0 : 24}px)`, backgroundColor: isDark ? '#ffffff' : '#171717' }}>
               <svg className="absolute transition-all duration-300" style={{ width: 8, height: 8, opacity: isDark ? 0 : 1, color: '#ffffff' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
               <svg className="absolute transition-all duration-300" style={{ width: 8, height: 8, opacity: isDark ? 1 : 0, color: '#171717' }} fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" /></svg>
@@ -270,7 +303,7 @@ export default function EditorNavbar({
               onChange={(e) => setEditNameValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveDisplayName(); if (e.key === 'Escape') setEditingName(false) }}
               onBlur={saveDisplayName}
-              className={`text-xs tracking-wide w-24 px-1.5 py-0.5 rounded-md border outline-none ${isDark ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400' : 'bg-white text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'}`}
+              className={`text-xs tracking-wide w-24 px-1.5 py-0.5 rounded-md border outline-none ${isDark ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400' : 'bg-[#f5f2ed] text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'}`}
               maxLength={30}
               autoFocus
             />
@@ -291,6 +324,7 @@ export default function EditorNavbar({
         ownerId={userId}
         isDark={isDark}
         onClose={() => setShowShareDialog(false)}
+        documents={documents}
       />
     )}
 
@@ -302,6 +336,16 @@ export default function EditorNavbar({
       onConfirm={() => { if (deleteConfirmId) onDeleteDocument(deleteConfirmId); setDeleteConfirmId(null) }}
       onCancel={() => setDeleteConfirmId(null)}
     />
+
+    {currentDocId && (
+      <VersionHistoryDialog
+        open={showVersionHistory}
+        documentId={currentDocId}
+        isDark={isDark}
+        onClose={() => setShowVersionHistory(false)}
+        onRestore={(content, title) => { if (onVersionRestore) onVersionRestore(content, title) }}
+      />
+    )}
     </>
   )
 }

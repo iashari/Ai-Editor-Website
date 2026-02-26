@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useMemo } from 'react'
 
 interface Props {
   content: string
@@ -15,6 +15,14 @@ export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSa
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const lineNumbersRef = useRef<HTMLDivElement>(null)
   const lineCount = (content || '').split('\n').length
+
+  const stats = useMemo(() => {
+    const text = content || ''
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0
+    const chars = text.length
+    const readingMin = Math.max(1, Math.ceil(words / 200))
+    return { words, chars, readingMin }
+  }, [content])
 
   const handleScroll = () => {
     if (textareaRef.current && lineNumbersRef.current) {
@@ -45,11 +53,20 @@ export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSa
   return (
     <div className={`h-full flex flex-col ${isDark ? 'bg-neutral-950' : 'bg-[#faf8f5]'}`}>
       {/* Header */}
-      <div className={`flex items-center justify-between px-4 py-2 border-b ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-[#e8e4dc]'}`}>
+      <div className={`flex items-center justify-between px-4 py-2 border-b ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-[#f5f2ed] border-[#e8e4dc]'}`}>
         <div className="flex items-center gap-2">
           <span className={`text-sm font-medium tracking-tight ${isDark ? 'text-neutral-200' : 'text-[#2d2a26]'}`}>Editor</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? 'bg-neutral-800 text-neutral-500' : 'bg-[#f5f2ed] text-[#9c958a]'}`}>
             {lineCount} lines
+          </span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? 'bg-neutral-800 text-neutral-500' : 'bg-[#f5f2ed] text-[#9c958a]'}`}>
+            {stats.words} words
+          </span>
+          <span className={`hidden sm:inline text-xs px-2 py-0.5 rounded-full ${isDark ? 'bg-neutral-800 text-neutral-500' : 'bg-[#f5f2ed] text-[#9c958a]'}`}>
+            {stats.chars} chars
+          </span>
+          <span className={`hidden md:inline text-xs px-2 py-0.5 rounded-full ${isDark ? 'bg-neutral-800 text-neutral-500' : 'bg-[#f5f2ed] text-[#9c958a]'}`}>
+            ~{stats.readingMin} min read
           </span>
         </div>
         <div className={`flex items-center gap-2 text-xs font-mono ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}>

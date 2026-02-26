@@ -67,4 +67,53 @@ CREATE POLICY "Owner or edit-shared can update" ON documents FOR UPDATE
     )
   );
 
--- INSERT and DELETE remain owner-only (existing policies should cover this)
+-- INSERT: only owner
+DROP POLICY IF EXISTS "Users can insert own documents" ON documents;
+DROP POLICY IF EXISTS "Insert own documents" ON documents;
+CREATE POLICY "Insert own documents" ON documents FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+-- DELETE: only owner
+DROP POLICY IF EXISTS "Users can delete own documents" ON documents;
+DROP POLICY IF EXISTS "Delete own documents" ON documents;
+CREATE POLICY "Delete own documents" ON documents FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Phase 4: Chat Messages table (AI chat persistence)
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL DEFAULT '',
+  function_call JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_doc_created
+  ON chat_messages(document_id, created_at);
+
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users manage own chat messages" ON chat_messages FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Phase 5: Document Versions table (version history)
+CREATE TABLE IF NOT EXISTS document_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_versions_doc_created
+  ON document_versions(document_id, created_at DESC);
+
+ALTER TABLE document_versions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users manage own versions" ON document_versions FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);

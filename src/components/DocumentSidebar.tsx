@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { getSupabaseClient } from '@/lib/supabaseClient'
 import { useDebounce } from '@/hooks/useDebounce'
-import { fetchDocuments, addTag, removeTag, getTagsForDocuments, getAllUserTags, getDocumentIdsByTag, type SortOption, type DocumentTag } from '@/lib/documents'
+import { fetchDocuments, renameDocument, addTag, removeTag, getTagsForDocuments, getAllUserTags, getDocumentIdsByTag, type SortOption, type DocumentTag } from '@/lib/documents'
 import ConfirmDialog from './ConfirmDialog'
+import { motion, AnimatePresence } from './animations/MotionDiv'
+import AnimatedItem from './animations/AnimatedItem'
 
 interface Document {
   id: string
@@ -141,7 +142,7 @@ export default function DocumentSidebar({
           filteredDocIds = await getDocumentIdsByTag(filterTag)
         }
 
-        const result = await fetchDocuments({ search: debouncedSearch, sort: sortBy, page })
+        const result = await fetchDocuments({ userId, search: debouncedSearch, sort: sortBy, page })
         if (cancelled) return
 
         let docs = result.data
@@ -205,15 +206,10 @@ export default function DocumentSidebar({
       return
     }
     try {
-      const { error } = await getSupabaseClient()
-        .from('documents')
-        .update({ title: trimmed, updated_at: new Date().toISOString() })
-        .eq('id', renamingId)
-      if (!error) {
-        setDocuments((prev) =>
-          prev.map((d) => (d.id === renamingId ? { ...d, title: trimmed } : d))
-        )
-      }
+      await renameDocument(renamingId, trimmed)
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === renamingId ? { ...d, title: trimmed } : d))
+      )
     } catch (err) {
       if (err instanceof Error) console.error('Rename failed:', err.message)
     }
@@ -276,7 +272,8 @@ export default function DocumentSidebar({
           </h2>
           <button
             onClick={onCreateDocument}
-            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 ${isDark ? 'bg-white text-black' : 'bg-[#2d2a26] text-white'}`}
+            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-all duration-300 hover:scale-105 active:scale-95"
+            style={{ backgroundColor: isDark ? '#ffffff' : '#2d2a26', color: isDark ? '#000000' : '#ffffff' }}
             title="New Document"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -299,7 +296,8 @@ export default function DocumentSidebar({
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}
+              className={`absolute top-1/2 -translate-y-1/2 ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}
+              style={{ left: '10px' }}
             >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -312,7 +310,7 @@ export default function DocumentSidebar({
               className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none transition-colors ${
                 isDark
                   ? 'bg-neutral-900 text-white border-neutral-800 placeholder-neutral-600 focus:border-neutral-600'
-                  : 'bg-white text-[#2d2a26] border-[#e8e4dc] placeholder-[#9c958a] focus:border-[#d5d0c8]'
+                  : 'bg-[#f5f2ed] text-[#2d2a26] border-[#d5d0c8] placeholder-[#9c958a] focus:border-[#9c958a]'
               }`}
             />
           </div>
@@ -325,7 +323,7 @@ export default function DocumentSidebar({
                 className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg border transition-colors w-full ${
                   isDark
                     ? 'text-neutral-400 border-neutral-800 hover:border-neutral-600 bg-neutral-900'
-                    : 'text-[#5c574e] border-[#e8e4dc] hover:border-[#d5d0c8] bg-white'
+                    : 'text-[#5c574e] border-[#d5d0c8] hover:border-[#9c958a] bg-[#f5f2ed]'
                 }`}
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -335,23 +333,31 @@ export default function DocumentSidebar({
                 </svg>
                 <span className="truncate">{SORT_LABELS[sortBy]}</span>
               </button>
-              {showSortMenu && (
-                <div className={`absolute top-full mt-1 left-0 w-full rounded-lg border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-[#e8e4dc]'}`}>
-                  {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => handleSortChange(key)}
-                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${
-                        sortBy === key
-                          ? isDark ? 'bg-neutral-800 text-white' : 'bg-[#f0ede7] text-[#2d2a26]'
-                          : isDark ? 'text-neutral-400 hover:bg-neutral-800' : 'text-[#5c574e] hover:bg-[#f5f2ed]'
-                      }`}
-                    >
-                      {SORT_LABELS[key]}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <AnimatePresence>
+                {showSortMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className={`absolute top-full mt-1 left-0 w-full rounded-lg border shadow-lg overflow-hidden z-50 ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-[#f5f2ed] border-[#d5d0c8]'}`}
+                  >
+                    {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => handleSortChange(key)}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                          sortBy === key
+                            ? isDark ? 'bg-neutral-800 text-white' : 'bg-[#f0ede8] text-[#2d2a26]'
+                            : isDark ? 'text-neutral-400 hover:bg-neutral-800' : 'text-[#5c574e] hover:bg-[#f5f2ed]'
+                        }`}
+                      >
+                        {SORT_LABELS[key]}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>
@@ -368,8 +374,11 @@ export default function DocumentSidebar({
               </button>
             )}
             {allTags.map((tag) => (
-              <button
+              <motion.button
                 key={tag}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2 }}
                 onClick={() => handleFilterTagChange(filterTag === tag ? null : tag)}
                 className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                   filterTag === tag
@@ -378,7 +387,7 @@ export default function DocumentSidebar({
                 }`}
               >
                 {tag}
-              </button>
+              </motion.button>
             ))}
           </div>
         )}
@@ -409,147 +418,151 @@ export default function DocumentSidebar({
             </div>
           ) : (
             <>
-              {documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className={`group px-4 py-2.5 cursor-pointer transition-colors ${
-                    doc.id === currentDocId
-                      ? isDark ? 'bg-neutral-800/60' : 'bg-[#f0ede7]'
-                      : isDark ? 'hover:bg-neutral-800/30' : 'hover:bg-[#f5f2ed]'
-                  }`}
-                  onClick={() => {
-                    if (renamingId !== doc.id) onSelectDocument(doc)
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className={`shrink-0 ${
-                        doc.id === currentDocId
-                          ? isDark ? 'text-white' : 'text-[#2d2a26]'
-                          : isDark ? 'text-neutral-600' : 'text-[#9c958a]'
-                      }`}
-                    >
-                      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-                      <polyline points="13 2 13 9 20 9" />
-                    </svg>
-
-                    {renamingId === doc.id ? (
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitRename()
-                          if (e.key === 'Escape') setRenamingId(null)
-                        }}
-                        onBlur={commitRename}
-                        className={`flex-1 text-sm px-1.5 py-0.5 rounded-md border outline-none min-w-0 ${
-                          isDark
-                            ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400'
-                            : 'bg-white text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'
-                        }`}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                      />
-                    ) : (
-                      <span
-                        className={`flex-1 text-sm truncate ${
+              {documents.map((doc, index) => (
+                <AnimatedItem key={doc.id} index={index} direction="up">
+                  <div
+                    className={`group px-4 py-2.5 cursor-pointer transition-all duration-200 active:scale-[0.98] ${
+                      doc.id === currentDocId
+                        ? isDark ? 'bg-neutral-800/60' : 'bg-[#f0ede8]'
+                        : isDark ? 'hover:bg-neutral-800/30' : 'hover:bg-[#f5f2ed]'
+                    }`}
+                    onClick={() => {
+                      if (renamingId !== doc.id) onSelectDocument(doc)
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`shrink-0 ${
                           doc.id === currentDocId
-                            ? isDark ? 'text-white font-medium' : 'text-[#2d2a26] font-medium'
-                            : isDark ? 'text-neutral-400' : 'text-[#5c574e]'
+                            ? isDark ? 'text-white' : 'text-[#2d2a26]'
+                            : isDark ? 'text-neutral-600' : 'text-[#9c958a]'
                         }`}
-                        onDoubleClick={() => startRename(doc)}
                       >
-                        {doc.title}
-                      </span>
-                    )}
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                        <polyline points="13 2 13 9 20 9" />
+                      </svg>
 
-                    {/* Actions (visible on hover) */}
-                    {renamingId !== doc.id && (
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); startRename(doc) }}
-                          className={`p-1 rounded-lg transition-colors ${isDark ? 'text-neutral-600 hover:text-neutral-300 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-[#5c574e] hover:bg-[#ebe7e0]'}`}
-                          title="Rename"
+                      {renamingId === doc.id ? (
+                        <input
+                          ref={renameInputRef}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename()
+                            if (e.key === 'Escape') setRenamingId(null)
+                          }}
+                          onBlur={commitRename}
+                          className={`flex-1 text-sm px-1.5 py-0.5 rounded-md border outline-none min-w-0 ${
+                            isDark
+                              ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400'
+                              : 'bg-[#f5f2ed] text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                        />
+                      ) : (
+                        <span
+                          className={`flex-1 text-sm truncate ${
+                            doc.id === currentDocId
+                              ? isDark ? 'text-white font-medium' : 'text-[#2d2a26] font-medium'
+                              : isDark ? 'text-neutral-400' : 'text-[#5c574e]'
+                          }`}
+                          onDoubleClick={() => startRename(doc)}
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setAddingTagDocId(addingTagDocId === doc.id ? null : doc.id) }}
-                          className={`p-1 rounded-lg transition-colors ${isDark ? 'text-neutral-600 hover:text-neutral-300 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-[#5c574e] hover:bg-[#ebe7e0]'}`}
-                          title="Add tag"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-                            <line x1="7" y1="7" x2="7.01" y2="7" />
-                          </svg>
-                        </button>
-                        {documents.length > 1 && (
+                          {doc.title}
+                        </span>
+                      )}
+
+                      {/* Actions (visible on hover) */}
+                      {renamingId !== doc.id && (
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                           <button
-                            onClick={(e) => handleDeleteClick(e, doc)}
-                            className={`p-1 rounded-lg transition-colors ${isDark ? 'text-neutral-600 hover:text-red-400 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-red-500 hover:bg-red-50'}`}
-                            title="Delete"
+                            onClick={(e) => { e.stopPropagation(); startRename(doc) }}
+                            className={`p-1 rounded-lg transition-all duration-200 hover:scale-110 active:scale-90 ${isDark ? 'text-neutral-600 hover:text-neutral-300 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-[#5c574e] hover:bg-[#f0ede8]'}`}
+                            title="Rename"
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
                           </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setAddingTagDocId(addingTagDocId === doc.id ? null : doc.id) }}
+                            className={`p-1 rounded-lg transition-all duration-200 hover:scale-110 active:scale-90 ${isDark ? 'text-neutral-600 hover:text-neutral-300 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-[#5c574e] hover:bg-[#f0ede8]'}`}
+                            title="Add tag"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                              <line x1="7" y1="7" x2="7.01" y2="7" />
+                            </svg>
+                          </button>
+                          {documents.length > 1 && (
+                            <button
+                              onClick={(e) => handleDeleteClick(e, doc)}
+                              className={`p-1 rounded-lg transition-all duration-200 hover:scale-110 active:scale-90 ${isDark ? 'text-neutral-600 hover:text-red-400 hover:bg-neutral-700' : 'text-[#9c958a] hover:text-red-500 hover:bg-red-50'}`}
+                              title="Delete"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tags for this doc */}
+                    {((docTags[doc.id] && docTags[doc.id].length > 0) || addingTagDocId === doc.id) && (
+                      <div className="mt-1.5 ml-6 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+                        {(docTags[doc.id] || []).map((tagRecord) => (
+                          <motion.span
+                            key={tagRecord.id}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.2 }}
+                            className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border cursor-default ${getTagColor(tagRecord.tag, isDark)}`}
+                          >
+                            {tagRecord.tag}
+                            <button
+                              onClick={() => handleRemoveTag(tagRecord)}
+                              className="hover:opacity-70 ml-0.5"
+                              title="Remove tag"
+                            >
+                              ×
+                            </button>
+                          </motion.span>
+                        ))}
+                        {addingTagDocId === doc.id && (
+                          <input
+                            ref={tagInputRef}
+                            value={newTagValue}
+                            onChange={(e) => setNewTagValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddTag(doc.id)
+                              if (e.key === 'Escape') { setAddingTagDocId(null); setNewTagValue('') }
+                            }}
+                            onBlur={() => handleAddTag(doc.id)}
+                            placeholder="tag..."
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full border outline-none w-16 ${
+                              isDark
+                                ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400'
+                                : 'bg-[#f5f2ed] text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'
+                            }`}
+                          />
                         )}
                       </div>
                     )}
                   </div>
-
-                  {/* Tags for this doc */}
-                  {((docTags[doc.id] && docTags[doc.id].length > 0) || addingTagDocId === doc.id) && (
-                    <div className="mt-1.5 ml-6 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
-                      {(docTags[doc.id] || []).map((tagRecord) => (
-                        <span
-                          key={tagRecord.id}
-                          className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border cursor-default ${getTagColor(tagRecord.tag, isDark)}`}
-                        >
-                          {tagRecord.tag}
-                          <button
-                            onClick={() => handleRemoveTag(tagRecord)}
-                            className="hover:opacity-70 ml-0.5"
-                            title="Remove tag"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                      {addingTagDocId === doc.id && (
-                        <input
-                          ref={tagInputRef}
-                          value={newTagValue}
-                          onChange={(e) => setNewTagValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddTag(doc.id)
-                            if (e.key === 'Escape') { setAddingTagDocId(null); setNewTagValue('') }
-                          }}
-                          onBlur={() => handleAddTag(doc.id)}
-                          placeholder="tag..."
-                          className={`text-[10px] px-1.5 py-0.5 rounded-full border outline-none w-16 ${
-                            isDark
-                              ? 'bg-neutral-800 text-white border-neutral-600 focus:border-neutral-400'
-                              : 'bg-white text-[#2d2a26] border-[#d5d0c8] focus:border-[#9c958a]'
-                          }`}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
+                </AnimatedItem>
               ))}
 
               {/* Load more */}
