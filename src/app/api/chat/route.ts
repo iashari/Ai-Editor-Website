@@ -99,7 +99,7 @@ Rules:
 
     // First call with function tools
     let response = await genai.models.generateContent({
-      model: 'gemini-2.5-pro',
+      model: 'gemini-2.5-flash',
       contents: [
         { role: 'user', parts: [{ text: systemPrompt }] },
         { role: 'model', parts: [{ text: 'Understood. I can see the document and I am ready to help you edit it. What would you like me to do?' }] },
@@ -157,7 +157,7 @@ The document has been updated successfully. Confirm the change to the user conci
 
       // Send function result back to AI for confirmation message
       response = await genai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.5-flash',
         contents: [
           { role: 'user', parts: [{ text: finalSystemPrompt }] },
           {
