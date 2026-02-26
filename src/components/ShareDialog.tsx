@@ -208,13 +208,16 @@ export default function ShareDialog({ open, documentId, ownerId, isDark, onClose
                       }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <p className={`text-sm font-medium truncate ${isDark ? 'text-neutral-200' : 'text-[#2d2a26]'}`}>
+                          {documents?.find((d) => d.id === selectedDocId)?.title || 'Document'}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             share.permission === 'edit'
                               ? isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-700'
                               : isDark ? 'bg-neutral-800 text-neutral-400' : 'bg-[#f5f2ed] text-[#5c574e]'
                           }`}>
-                            {share.permission === 'edit' ? 'Edit' : 'View'}
+                            {share.permission === 'edit' ? 'Can Edit' : 'View Only'}
                           </span>
                           {isExpired(share) && (
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-700'}`}>

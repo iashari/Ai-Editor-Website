@@ -13,7 +13,10 @@ import { getSupabaseClient } from '@/lib/supabaseClient'
 import { createDocument, deleteDocument as deleteDoc } from '@/lib/documents'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { useRealtimeDocument } from '@/hooks/useRealtimeDocument'
+import { useCollaboration } from '@/hooks/useCollaboration'
+import { useThrottle } from '@/hooks/useThrottle'
 import { motion, AnimatePresence } from '@/components/animations/MotionDiv'
+import LiveCursors from '@/components/LiveCursors'
 import { saveVersion } from '@/lib/versionHistory'
 
 function useHistory(initialContent: string) {
@@ -71,6 +74,7 @@ export default function EditorPage() {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved')
   const [displayName, setDisplayName] = useState('')
   const [showSidebar, setShowSidebar] = useState(true)
+  const pageContainerRef = useRef<HTMLDivElement>(null)
   const { current: documentContent, push: pushHistory, undo, redo, canUndo, canRedo } = useHistory('')
 
   // Theme transition (circular wipe + smooth color transitions)
@@ -132,6 +136,52 @@ export default function EditorPage() {
       }
     }
   }, [user, authLoading, router])
+
+  // Open a shared document in the editor (from shared page "Open Editor" button)
+  const openDocPending = useRef<string | null>(null)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const openDocId = params.get('openDoc')
+    if (openDocId) {
+      openDocPending.current = openDocId
+      window.history.replaceState({}, '', '/')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!user || authLoading || !openDocPending.current) return
+    const openDocId = openDocPending.current
+    openDocPending.current = null
+
+    // Set a placeholder ID immediately so auto-select doesn't override
+    setCurrentDocId(openDocId)
+
+    async function loadSharedDoc() {
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from('documents')
+          .select('id, title, content')
+          .eq('id', openDocId)
+          .single()
+        if (error || !data) {
+          // Failed to load, clear so auto-select can take over
+          setCurrentDocId(null)
+          return
+        }
+        setDocuments((prev) => {
+          if (prev.some((d) => d.id === data.id)) return prev
+          return [data, ...prev]
+        })
+        setCurrentDocId(data.id)
+        setDocTitle(data.title)
+        pushHistory(data.content)
+      } catch {
+        setCurrentDocId(null)
+      }
+    }
+    loadSharedDoc()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading])
 
   useEffect(() => {
     if (user) {
@@ -209,10 +259,44 @@ export default function EditorPage() {
   })
   useRealtimeDocument(currentDocId, (content) => pushHistory(content))
 
+  // Real-time collaboration
+  const isReceivingRemoteRef = useRef(false)
+  const {
+    collaborators,
+    typingUsers,
+    isConnected: isCollabConnected,
+    broadcastContentChange,
+    updateCursor,
+    updateMouse,
+  } = useCollaboration({
+    documentId: currentDocId,
+    userId: user?.id || '',
+    displayName,
+    onContentChange: useCallback((newContent: string) => {
+      isReceivingRemoteRef.current = true
+      pushHistory(newContent)
+      // Auto-save remote changes to DB
+      if (currentDocId) {
+        Promise.resolve(
+          getSupabaseClient().from('documents').update({ content: newContent, updated_at: new Date().toISOString() }).eq('id', currentDocId)
+        ).then(() => setSaveStatus('saved')).catch(() => {})
+      }
+    }, [pushHistory, currentDocId]),
+  })
+
+  const throttledCursorUpdate = useThrottle((line: number, col: number) => {
+    updateCursor(line, col)
+  }, 50)
+
   const handleContentChange = useCallback((newContent: string) => {
     pushHistory(newContent)
     setSaveStatus('unsaved')
-  }, [pushHistory])
+    // Broadcast to collaborators (skip if this was a remote change)
+    if (!isReceivingRemoteRef.current) {
+      broadcastContentChange(newContent)
+    }
+    isReceivingRemoteRef.current = false
+  }, [pushHistory, broadcastContentChange])
 
   const handleAIUpdate = useCallback(async (newContent: string) => {
     pushHistory(newContent)
@@ -358,7 +442,13 @@ export default function EditorPage() {
 
   // Main editor
   return (
-    <div className={`h-screen flex flex-col ${isDark ? 'bg-neutral-950' : 'bg-[#faf8f5]'}`}>
+    <div ref={pageContainerRef} className={`h-screen flex flex-col relative ${isDark ? 'bg-neutral-950' : 'bg-[#faf8f5]'}`}>
+      <LiveCursors
+        collaborators={collaborators}
+        onMouseMove={updateMouse}
+        containerRef={pageContainerRef}
+        isDark={isDark}
+      />
       <EditorNavbar
         docTitle={docTitle}
         setDocTitle={setDocTitle}
@@ -385,6 +475,9 @@ export default function EditorPage() {
         onSidebarToggle={() => setShowSidebar(!showSidebar)}
         showSidebar={showSidebar}
         onVersionRestore={handleVersionRestore}
+        collaborators={collaborators}
+        typingUsers={typingUsers}
+        isCollabConnected={isCollabConnected}
       />
 
       {/* Main content: Sidebar + Editor + AI Chat */}
@@ -417,7 +510,7 @@ export default function EditorPage() {
         <div className="flex-1 overflow-hidden">
           <Group orientation="horizontal">
             <Panel defaultSize={50} minSize={25}>
-              <DocumentEditor key={`editor-${currentDocId}`} content={documentContent} onChange={handleContentChange} onUndo={undo} onRedo={redo} onSave={handleSave} isDark={isDark} />
+              <DocumentEditor key={`editor-${currentDocId}`} content={documentContent} onChange={handleContentChange} onUndo={undo} onRedo={redo} onSave={handleSave} isDark={isDark} onCursorMove={throttledCursorUpdate} collaborators={collaborators} />
             </Panel>
             <Separator className={`w-1 transition-colors duration-300 ${isDark ? 'bg-neutral-800 hover:bg-neutral-600' : 'bg-[#d5d0c8] hover:bg-[#c5c0b8] border-x border-[#c5c0b8]'}`} />
             <Panel defaultSize={50} minSize={25}>

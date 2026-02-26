@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useCallback, useMemo } from 'react'
+import CursorOverlay from './CursorOverlay'
+import type { CollaboratorPresence } from '@/hooks/useCollaboration'
 
 interface Props {
   content: string
@@ -9,9 +11,11 @@ interface Props {
   onRedo?: () => void
   onSave?: () => void
   isDark?: boolean
+  onCursorMove?: (line: number, col: number) => void
+  collaborators?: CollaboratorPresence[]
 }
 
-export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSave, isDark = true }: Props) {
+export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSave, isDark = true, onCursorMove, collaborators = [] }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const lineNumbersRef = useRef<HTMLDivElement>(null)
   const lineCount = (content || '').split('\n').length
@@ -29,6 +33,15 @@ export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSa
       lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop
     }
   }
+
+  const emitCursorPosition = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea || !onCursorMove) return
+    const pos = textarea.selectionStart
+    const textBefore = textarea.value.substring(0, pos)
+    const lines = textBefore.split('\n')
+    onCursorMove(lines.length, lines[lines.length - 1].length)
+  }, [onCursorMove])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -85,17 +98,30 @@ export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSa
           {Array.from({ length: lineCount }, (_, i) => (<div key={i + 1}>{i + 1}</div>))}
         </div>
 
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
-          onScroll={handleScroll}
-          onKeyDown={handleKeyDown}
-          className={`flex-1 p-3 font-mono text-sm resize-none focus:outline-none ${isDark ? 'bg-neutral-950 text-neutral-100 caret-white' : 'bg-[#faf8f5] text-[#2d2a26] caret-[#2d2a26]'}`}
-          style={{ lineHeight: '1.5rem' }}
-          placeholder="Start typing your document here..."
-          spellCheck={false}
-        />
+        <div className="relative flex-1">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => { onChange(e.target.value); emitCursorPosition() }}
+            onScroll={handleScroll}
+            onKeyDown={handleKeyDown}
+            onKeyUp={emitCursorPosition}
+            onClick={emitCursorPosition}
+            className={`absolute inset-0 p-3 font-mono text-sm resize-none focus:outline-none ${isDark ? 'bg-neutral-950 text-neutral-100 caret-white' : 'bg-[#faf8f5] text-[#2d2a26] caret-[#2d2a26]'}`}
+            style={{ lineHeight: '1.5rem' }}
+            placeholder="Start typing your document here..."
+            spellCheck={false}
+          />
+          <CursorOverlay
+            collaborators={collaborators}
+            textareaRef={textareaRef}
+            content={content}
+            isDark={isDark}
+            lineHeight={24}
+            paddingTop={12}
+            paddingLeft={12}
+          />
+        </div>
       </div>
     </div>
   )

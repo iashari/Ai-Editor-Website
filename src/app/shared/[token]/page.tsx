@@ -6,6 +6,11 @@ import Link from 'next/link'
 import { useAuth } from '@/components/AuthProvider'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { useRealtimeDocument } from '@/hooks/useRealtimeDocument'
+import { useCollaboration } from '@/hooks/useCollaboration'
+import { useThrottle } from '@/hooks/useThrottle'
+import CursorOverlay from '@/components/CursorOverlay'
+import LiveCursors from '@/components/LiveCursors'
+import PresenceIndicator from '@/components/PresenceIndicator'
 
 interface SharedDocument {
   id: string
@@ -29,6 +34,9 @@ export default function SharedDocumentPage() {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved')
   const saveTimeoutRef = useRef<NodeJS.Timeout>(undefined)
   const [isDark, setIsDark] = useState(true)
+  const isReceivingRemoteRef = useRef(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const pageContainerRef = useRef<HTMLDivElement>(null)
 
   // Sync html dark class with local isDark state
   useEffect(() => {
@@ -102,15 +110,47 @@ export default function SharedDocumentPage() {
 
   const canEdit = permission === 'edit' && !!user
 
-  // Real-time collaboration: sync changes from other users
+  // Real-time collaboration: sync changes from other users via postgres_changes
   const handleRealtimeUpdate = useCallback((newContent: string) => {
-    // Only apply remote changes, skip if we just saved this content ourselves
     setContent((prev) => {
       if (prev === newContent) return prev
       return newContent
     })
   }, [])
   useRealtimeDocument(document?.id ?? null, handleRealtimeUpdate)
+
+  // Presence + broadcast collaboration
+  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
+
+  const {
+    collaborators,
+    typingUsers,
+    isConnected: isCollabConnected,
+    broadcastContentChange,
+    updateCursor,
+    updateMouse,
+  } = useCollaboration({
+    documentId: document?.id ?? null,
+    userId: user?.id || `anon-${token?.slice(0, 8)}`,
+    displayName,
+    onContentChange: useCallback((newContent: string) => {
+      isReceivingRemoteRef.current = true
+      setContent(newContent)
+    }, []),
+  })
+
+  const throttledCursorUpdate = useThrottle((line: number, col: number) => {
+    updateCursor(line, col)
+  }, 50)
+
+  const emitCursor = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const pos = textarea.selectionStart
+    const textBefore = textarea.value.substring(0, pos)
+    const lines = textBefore.split('\n')
+    throttledCursorUpdate(lines.length, lines[lines.length - 1].length)
+  }, [throttledCursorUpdate])
 
   // Redirect to login if edit permission but not logged in
   useEffect(() => {
@@ -155,7 +195,13 @@ export default function SharedDocumentPage() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDark ? 'bg-neutral-950' : 'bg-[#faf8f5]'}`}>
+    <div ref={pageContainerRef} className={`min-h-screen flex flex-col transition-colors duration-300 relative ${isDark ? 'bg-neutral-950' : 'bg-[#faf8f5]'}`}>
+      <LiveCursors
+        collaborators={collaborators}
+        onMouseMove={updateMouse}
+        containerRef={pageContainerRef}
+        isDark={isDark}
+      />
       {/* Top bar */}
       <div className={`border-b backdrop-blur-md transition-colors duration-300 ${isDark ? 'border-neutral-800 bg-neutral-950/80' : 'border-[#e8e4dc] bg-[#faf8f5]/80'}`}>
         <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -187,13 +233,13 @@ export default function SharedDocumentPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs text-green-400">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-              </span>
-              Live
-            </span>
+            {/* Presence indicator */}
+            <PresenceIndicator
+              collaborators={collaborators}
+              typingUsers={typingUsers}
+              isConnected={isCollabConnected}
+              isDark={isDark}
+            />
             {/* Theme toggle */}
             <button
               onClick={() => setIsDark(!isDark)}
@@ -207,7 +253,7 @@ export default function SharedDocumentPage() {
               )}
             </button>
             <Link
-              href="/"
+              href={document ? `/?openDoc=${document.id}` : '/'}
               className={`text-xs transition-colors ${isDark ? 'text-neutral-500 hover:text-neutral-300' : 'text-[#9c958a] hover:text-[#2d2a26]'}`}
             >
               Open Editor
@@ -219,19 +265,40 @@ export default function SharedDocumentPage() {
       {/* Document content */}
       <div className="flex-1 max-w-4xl w-full mx-auto px-6 py-8">
         {canEdit ? (
-          <textarea
-            value={content}
-            onChange={(e) => { setContent(e.target.value); setSaveStatus('saving') }}
-            onBlur={handleSave}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault()
-                handleSave()
-              }
-            }}
-            className={`w-full min-h-[calc(100vh-8rem)] bg-transparent text-sm leading-relaxed resize-none outline-none font-[family-name:var(--font-geist-mono)] transition-colors duration-300 ${isDark ? 'text-neutral-100 placeholder:text-neutral-600' : 'text-[#2d2a26] placeholder:text-[#9c958a]'}`}
-            placeholder="Start writing..."
-          />
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => {
+                const newVal = e.target.value
+                setContent(newVal)
+                setSaveStatus('saving')
+                if (!isReceivingRemoteRef.current) {
+                  broadcastContentChange(newVal)
+                }
+                isReceivingRemoteRef.current = false
+                emitCursor()
+              }}
+              onBlur={handleSave}
+              onKeyUp={emitCursor}
+              onClick={emitCursor}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                  e.preventDefault()
+                  handleSave()
+                }
+              }}
+              className={`w-full min-h-[calc(100vh-8rem)] bg-transparent border-none text-sm resize-none outline-none ring-0 focus:outline-none focus:ring-0 focus:border-none font-[family-name:var(--font-geist-mono)] transition-colors duration-300 ${isDark ? 'text-neutral-100 placeholder:text-neutral-600' : 'text-[#2d2a26] placeholder:text-[#9c958a]'}`}
+              style={{ lineHeight: '1.625rem' }}
+              placeholder="Start writing..."
+            />
+            <CursorOverlay
+              collaborators={collaborators}
+              textareaRef={textareaRef}
+              content={content}
+              isDark={isDark}
+            />
+          </div>
         ) : (
           <div className={`text-sm leading-relaxed whitespace-pre-wrap font-[family-name:var(--font-geist-mono)] transition-colors duration-300 ${isDark ? 'text-neutral-200' : 'text-[#2d2a26]'}`}>
             {content || <span className={`italic ${isDark ? 'text-neutral-600' : 'text-[#9c958a]'}`}>This document is empty.</span>}

@@ -5,7 +5,9 @@ import { getSupabaseClient } from '@/lib/supabaseClient'
 import ShareDialog from './ShareDialog'
 import ConfirmDialog from './ConfirmDialog'
 import VersionHistoryDialog from './VersionHistoryDialog'
+import PresenceIndicator from './PresenceIndicator'
 import { motion, AnimatePresence } from './animations/MotionDiv'
+import type { CollaboratorPresence } from '@/hooks/useCollaboration'
 
 interface Document {
   id: string
@@ -39,6 +41,9 @@ interface EditorNavbarProps {
   onSidebarToggle?: () => void
   showSidebar?: boolean
   onVersionRestore?: (content: string, title: string) => void
+  collaborators?: CollaboratorPresence[]
+  typingUsers?: string[]
+  isCollabConnected?: boolean
 }
 
 export default function EditorNavbar({
@@ -67,6 +72,9 @@ export default function EditorNavbar({
   onSidebarToggle,
   showSidebar,
   onVersionRestore,
+  collaborators = [],
+  typingUsers = [],
+  isCollabConnected = false,
 }: EditorNavbarProps) {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showVersionHistory, setShowVersionHistory] = useState(false)
@@ -168,6 +176,16 @@ export default function EditorNavbar({
           }`}>
             {saveStatus === 'saved' ? 'Saved' : saveStatus === 'saving' ? 'Saving...' : saveStatus === 'error' ? 'Error saving' : 'Unsaved'}
           </span>
+        </div>
+
+        {/* Center-left - Presence */}
+        <div className="hidden lg:flex items-center">
+          <PresenceIndicator
+            collaborators={collaborators}
+            typingUsers={typingUsers}
+            isConnected={isCollabConnected}
+            isDark={isDark}
+          />
         </div>
 
         {/* Center - Tool buttons */}

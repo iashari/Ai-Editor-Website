@@ -117,3 +117,11 @@ ALTER TABLE document_versions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own versions" ON document_versions FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
+-- Phase 6: Realtime Collaboration (Broadcast & Presence authorization)
+CREATE POLICY "Authenticated users can use Realtime"
+ON realtime.messages
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
