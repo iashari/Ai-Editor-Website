@@ -107,6 +107,7 @@ export default function DocumentEditor({ content, onChange, onUndo, onRedo, onSa
             onKeyDown={handleKeyDown}
             onKeyUp={emitCursorPosition}
             onClick={emitCursorPosition}
+            onSelect={emitCursorPosition}
             className={`absolute inset-0 p-3 font-mono text-sm resize-none focus:outline-none ${isDark ? 'bg-neutral-950 text-neutral-100 caret-white' : 'bg-[#faf8f5] text-[#2d2a26] caret-[#2d2a26]'}`}
             style={{ lineHeight: '1.5rem' }}
             placeholder="Start typing your document here..."

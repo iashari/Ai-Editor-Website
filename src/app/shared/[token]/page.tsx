@@ -288,6 +288,7 @@ export default function SharedDocumentPage() {
               onBlur={handleSave}
               onKeyUp={emitCursor}
               onClick={emitCursor}
+              onSelect={emitCursor}
               onKeyDown={(e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                   e.preventDefault()

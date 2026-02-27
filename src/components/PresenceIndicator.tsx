@@ -16,25 +16,24 @@ export default function PresenceIndicator({
   isConnected,
   isDark,
 }: PresenceIndicatorProps) {
-  if (!isConnected && collaborators.length === 0) return null
+  if (!isConnected) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className={`relative inline-flex rounded-full h-2 w-2 ${isDark ? 'bg-neutral-600' : 'bg-[#c5c0b8]'}`} />
+        <span className={`text-xs ${isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}>Connecting...</span>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center gap-2">
       {/* Connection status dot */}
       <div className="flex items-center gap-1.5">
         <span className="relative flex h-2 w-2">
-          {isConnected && (
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-          )}
-          <span
-            className={`relative inline-flex rounded-full h-2 w-2 ${
-              isConnected ? 'bg-green-500' : 'bg-neutral-500'
-            }`}
-          />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
         </span>
-        <span className={`text-xs ${isConnected ? 'text-green-400' : isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}>
-          Live
-        </span>
+        <span className="text-xs text-green-400">Live</span>
       </div>
 
       {/* Separator */}
