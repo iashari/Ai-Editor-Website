@@ -15,6 +15,7 @@ import { useAutoSave } from '@/hooks/useAutoSave'
 import { useRealtimeDocument } from '@/hooks/useRealtimeDocument'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import { useThrottle } from '@/hooks/useThrottle'
+import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
 import { motion, AnimatePresence } from '@/components/animations/MotionDiv'
 import LiveCursors from '@/components/LiveCursors'
 import { saveVersion } from '@/lib/versionHistory'
@@ -288,15 +289,20 @@ export default function EditorPage() {
     updateCursor(line, col)
   }, 50)
 
+  const debouncedBroadcast = useDebouncedCallback(
+    (content: string) => broadcastContentChange(content),
+    300
+  )
+
   const handleContentChange = useCallback((newContent: string) => {
     pushHistory(newContent)
     setSaveStatus('unsaved')
-    // Broadcast to collaborators (skip if this was a remote change)
+    // Debounced broadcast to collaborators (skip if this was a remote change)
     if (!isReceivingRemoteRef.current) {
-      broadcastContentChange(newContent)
+      debouncedBroadcast(newContent)
     }
     isReceivingRemoteRef.current = false
-  }, [pushHistory, broadcastContentChange])
+  }, [pushHistory, debouncedBroadcast])
 
   const handleAIUpdate = useCallback(async (newContent: string) => {
     pushHistory(newContent)

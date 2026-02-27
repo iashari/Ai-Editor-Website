@@ -8,6 +8,7 @@ import { getSupabaseClient } from '@/lib/supabaseClient'
 import { useRealtimeDocument } from '@/hooks/useRealtimeDocument'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import { useThrottle } from '@/hooks/useThrottle'
+import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
 import CursorOverlay from '@/components/CursorOverlay'
 import LiveCursors from '@/components/LiveCursors'
 import PresenceIndicator from '@/components/PresenceIndicator'
@@ -152,6 +153,11 @@ export default function SharedDocumentPage() {
     throttledCursorUpdate(lines.length, lines[lines.length - 1].length)
   }, [throttledCursorUpdate])
 
+  const debouncedBroadcast = useDebouncedCallback(
+    (text: string) => broadcastContentChange(text),
+    300
+  )
+
   // Redirect to login if edit permission but not logged in
   useEffect(() => {
     if (state === 'ready' && permission === 'edit' && !authLoading && !user) {
@@ -274,7 +280,7 @@ export default function SharedDocumentPage() {
                 setContent(newVal)
                 setSaveStatus('saving')
                 if (!isReceivingRemoteRef.current) {
-                  broadcastContentChange(newVal)
+                  debouncedBroadcast(newVal)
                 }
                 isReceivingRemoteRef.current = false
                 emitCursor()

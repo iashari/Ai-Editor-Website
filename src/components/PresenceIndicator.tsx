@@ -134,6 +134,24 @@ export default function PresenceIndicator({
           {collaborators.length + 1} online
         </span>
       )}
+
+      {/* Typing text indicator */}
+      <AnimatePresence>
+        {typingUsers.length > 0 && (
+          <motion.span
+            initial={{ opacity: 0, x: -4 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -4 }}
+            transition={{ duration: 0.2 }}
+            className={`text-[11px] ${isDark ? 'text-neutral-500' : 'text-[#9c958a]'}`}
+          >
+            {typingUsers
+              .map((uid) => collaborators.find((c) => c.userId === uid)?.displayName ?? 'Someone')
+              .join(', ')}{' '}
+            sedang mengetik...
+          </motion.span>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
