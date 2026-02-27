@@ -23,8 +23,12 @@ import { saveVersion } from '@/lib/versionHistory'
 function useHistory(initialContent: string) {
   const [history, setHistory] = useState<string[]>([initialContent])
   const [index, setIndex] = useState(0)
+  const indexRef = useRef(0)
   const isUndoRedoRef = useRef(false)
   const current = history[index] ?? ''
+
+  // Keep indexRef in sync
+  useEffect(() => { indexRef.current = index }, [index])
 
   const push = useCallback(
     (content: string) => {
@@ -32,22 +36,23 @@ function useHistory(initialContent: string) {
         isUndoRedoRef.current = false
         return
       }
+      const currentIndex = indexRef.current
       setHistory((prev) => {
-        const newHistory = [...prev.slice(0, index + 1), content]
+        const newHistory = [...prev.slice(0, currentIndex + 1), content]
         if (newHistory.length > 100) newHistory.shift()
         return newHistory
       })
       setIndex((prev) => Math.min(prev + 1, 99))
     },
-    [index]
+    []
   )
 
   const undo = useCallback(() => {
-    if (index > 0) {
+    if (indexRef.current > 0) {
       isUndoRedoRef.current = true
       setIndex((prev) => prev - 1)
     }
-  }, [index])
+  }, [])
 
   const redo = useCallback(() => {
     if (index < history.length - 1) {
@@ -258,8 +263,6 @@ export default function EditorPage() {
       }
     }
   })
-  useRealtimeDocument(currentDocId, (content) => pushHistory(content))
-
   // Real-time collaboration
   const isReceivingRemoteRef = useRef(false)
   const {
@@ -276,6 +279,8 @@ export default function EditorPage() {
     onContentChange: useCallback((newContent: string) => {
       isReceivingRemoteRef.current = true
       pushHistory(newContent)
+      // Reset flag after React processes the state update
+      requestAnimationFrame(() => { isReceivingRemoteRef.current = false })
       // Auto-save remote changes to DB
       if (currentDocId) {
         Promise.resolve(
@@ -284,6 +289,9 @@ export default function EditorPage() {
       }
     }, [pushHistory, currentDocId]),
   })
+
+  // Fallback: use postgres_changes only when collaboration is not active
+  useRealtimeDocument(isCollabConnected ? null : currentDocId, (content) => pushHistory(content))
 
   const throttledCursorUpdate = useThrottle((line: number, col: number) => {
     updateCursor(line, col)
@@ -306,6 +314,7 @@ export default function EditorPage() {
 
   const handleAIUpdate = useCallback(async (newContent: string) => {
     pushHistory(newContent)
+    broadcastContentChange(newContent)
     if (currentDocId) {
       try {
         setSaveStatus('saving')
@@ -316,7 +325,7 @@ export default function EditorPage() {
         setSaveStatus('error')
       }
     }
-  }, [pushHistory, currentDocId])
+  }, [pushHistory, currentDocId, broadcastContentChange])
 
   const handleSave = useCallback(async () => {
     if (!currentDocId || !user) return

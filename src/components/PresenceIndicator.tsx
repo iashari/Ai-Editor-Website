@@ -46,12 +46,13 @@ export default function PresenceIndicator({
         <AnimatePresence>
           {collaborators.map((collab) => {
             const isTyping = typingUsers.includes(collab.userId)
-            const initials = collab.displayName
+            const initials = (collab.displayName || '')
               .split(' ')
+              .filter(Boolean)
               .map((w) => w[0])
               .join('')
               .slice(0, 2)
-              .toUpperCase()
+              .toUpperCase() || '?'
 
             return (
               <motion.div

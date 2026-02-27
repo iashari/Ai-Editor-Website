@@ -38,8 +38,8 @@ function CursorPointer({ collab, isDark }: { collab: CollaboratorPresence; isDar
   return (
     <motion.div
       animate={{
-        x: collab.mouse!.x,
-        y: collab.mouse!.y,
+        x: collab.mouse?.x ?? 0,
+        y: collab.mouse?.y ?? 0,
         opacity: 1,
       }}
       initial={{ opacity: 0 }}
@@ -85,7 +85,7 @@ function CursorPointer({ collab, isDark }: { collab: CollaboratorPresence; isDar
 export default function LiveCursors({ collaborators, onMouseMove, containerRef, isDark }: LiveCursorsProps) {
   const throttledMouseMove = useThrottle((x: number, y: number) => {
     onMouseMove(x, y)
-  }, 25)
+  }, 75)
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const container = containerRef.current

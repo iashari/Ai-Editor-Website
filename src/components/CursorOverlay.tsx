@@ -126,26 +126,32 @@ export default function CursorOverlay({
   const [positions, setPositions] = useState<CursorPosition[]>([])
   const measuredRef = useRef<{ charWidth: number; lineHeight: number; paddingTop: number; paddingLeft: number } | null>(null)
 
+  // Measure font metrics once (or when explicit props change)
   useEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
-
     const style = getComputedStyle(textarea)
     const cw = measureCharWidth(textarea)
     const lh = lineHeight ?? (parseFloat(style.lineHeight) || 24)
     const pt = paddingTop ?? (parseFloat(style.paddingTop) || 0)
     const pl = paddingLeft ?? (parseFloat(style.paddingLeft) || 0)
     measuredRef.current = { charWidth: cw, lineHeight: lh, paddingTop: pt, paddingLeft: pl }
+  }, [textareaRef, lineHeight, paddingTop, paddingLeft])
+
+  // Recompute positions when collaborators/content/scroll change
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea || !measuredRef.current) return
+    const m = measuredRef.current
 
     const update = () => {
-      const m = measuredRef.current!
       setPositions(computePositions(textarea, collaborators, m.lineHeight, m.charWidth, m.paddingTop, m.paddingLeft))
     }
     update()
 
     textarea.addEventListener('scroll', update)
     return () => textarea.removeEventListener('scroll', update)
-  }, [textareaRef, collaborators, content, lineHeight, paddingTop, paddingLeft])
+  }, [textareaRef, collaborators, content])
 
   const lh = measuredRef.current?.lineHeight ?? lineHeight ?? 24
 

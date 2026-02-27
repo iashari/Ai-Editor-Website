@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 
 export function useRealtimeDocument(
   documentId: string | null,
   onUpdate: (content: string) => void
 ) {
+  const onUpdateRef = useRef(onUpdate)
+  useEffect(() => { onUpdateRef.current = onUpdate }, [onUpdate])
+
   useEffect(() => {
     if (!documentId) return
 
@@ -21,7 +24,7 @@ export function useRealtimeDocument(
           filter: `id=eq.${documentId}`,
         },
         (payload: { new: { content: string } }) => {
-          onUpdate(payload.new.content)
+          onUpdateRef.current(payload.new.content)
         }
       )
       .subscribe()
@@ -29,5 +32,5 @@ export function useRealtimeDocument(
     return () => {
       getSupabaseClient().removeChannel(channel)
     }
-  }, [documentId, onUpdate])
+  }, [documentId])
 }

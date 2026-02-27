@@ -38,6 +38,7 @@ export default function SharedDocumentPage() {
   const isReceivingRemoteRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const pageContainerRef = useRef<HTMLDivElement>(null)
+  const anonIdRef = useRef(`anon-${Math.random().toString(36).slice(2, 10)}`)
 
   // Sync html dark class with local isDark state
   useEffect(() => {
@@ -111,15 +112,6 @@ export default function SharedDocumentPage() {
 
   const canEdit = permission === 'edit' && !!user
 
-  // Real-time collaboration: sync changes from other users via postgres_changes
-  const handleRealtimeUpdate = useCallback((newContent: string) => {
-    setContent((prev) => {
-      if (prev === newContent) return prev
-      return newContent
-    })
-  }, [])
-  useRealtimeDocument(document?.id ?? null, handleRealtimeUpdate)
-
   // Presence + broadcast collaboration
   const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
 
@@ -132,12 +124,18 @@ export default function SharedDocumentPage() {
     updateMouse,
   } = useCollaboration({
     documentId: document?.id ?? null,
-    userId: user?.id || `anon-${token?.slice(0, 8)}`,
+    userId: user?.id || anonIdRef.current,
     displayName,
     onContentChange: useCallback((newContent: string) => {
       isReceivingRemoteRef.current = true
       setContent(newContent)
+      requestAnimationFrame(() => { isReceivingRemoteRef.current = false })
     }, []),
+  })
+
+  // Fallback: use postgres_changes only when collaboration broadcast is not active
+  useRealtimeDocument(isCollabConnected ? null : (document?.id ?? null), (newContent: string) => {
+    setContent((prev) => (prev === newContent ? prev : newContent))
   })
 
   const throttledCursorUpdate = useThrottle((line: number, col: number) => {

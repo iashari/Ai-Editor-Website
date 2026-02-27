@@ -47,6 +47,7 @@ export function useCollaboration({
   const [collaborators, setCollaborators] = useState<CollaboratorPresence[]>([])
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const isConnectedRef = useRef(false)
   const [myColor, setMyColor] = useState(COLLABORATOR_COLORS[0])
   const myColorRef = useRef(COLLABORATOR_COLORS[0])
   const onContentChangeRef = useRef(onContentChange)
@@ -59,32 +60,32 @@ export function useCollaboration({
   }, [onContentChange])
 
   const broadcastContentChange = useCallback((newContent: string) => {
-    if (!channelRef.current || !isConnected) return
+    if (!channelRef.current || !isConnectedRef.current) return
     channelRef.current.send({
       type: 'broadcast',
       event: 'content_change',
       payload: { content: newContent, userId, timestamp: Date.now() },
     })
-  }, [userId, isConnected])
+  }, [userId])
 
   const updateCursor = useCallback((line: number, col: number) => {
-    if (!channelRef.current || !isConnected) return
+    if (!channelRef.current || !isConnectedRef.current) return
     channelRef.current.send({
       type: 'broadcast',
       event: 'cursor_move',
       payload: { userId, line, col },
     })
-  }, [userId, isConnected])
+  }, [userId])
 
   // Broadcast mouse pointer position (pixel coords relative to page container)
   const updateMouse = useCallback((x: number, y: number) => {
-    if (!channelRef.current || !isConnected) return
+    if (!channelRef.current || !isConnectedRef.current) return
     channelRef.current.send({
       type: 'broadcast',
       event: 'mouse_move',
       payload: { userId, x, y },
     })
-  }, [userId, isConnected])
+  }, [userId])
 
   useEffect(() => {
     if (!documentId || !userId) return
@@ -100,7 +101,7 @@ export function useCollaboration({
     // Presence sync — track who's online
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState<PresencePayload>()
-      const allUsers = Object.values(state).map((entries) => entries[0])
+      const allUsers = Object.values(state).map((entries) => entries[0]).filter(Boolean)
       const others = allUsers.filter((u) => u.userId !== userId)
 
       const allSorted = [...allUsers].sort(
@@ -171,6 +172,7 @@ export function useCollaboration({
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        isConnectedRef.current = true
         setIsConnected(true)
         await channel.track({
           userId,
@@ -178,6 +180,9 @@ export function useCollaboration({
           color: myColorRef.current,
           lastSeen: new Date().toISOString(),
         })
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        isConnectedRef.current = false
+        setIsConnected(false)
       }
     })
 
@@ -191,6 +196,7 @@ export function useCollaboration({
 
       supabase.removeChannel(channel)
       channelRef.current = null
+      isConnectedRef.current = false
       setIsConnected(false)
       setCollaborators([])
       setTypingUsers([])
