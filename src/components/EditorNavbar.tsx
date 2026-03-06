@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import ShareDialog from './ShareDialog'
 import ConfirmDialog from './ConfirmDialog'
-import VersionHistoryDialog from './VersionHistoryDialog'
+import VersionTimeline from './VersionTimeline'
+import DiffModal from './DiffModal'
 import PresenceIndicator from './PresenceIndicator'
 import { motion, AnimatePresence } from './animations/MotionDiv'
 import type { CollaboratorPresence } from '@/hooks/useCollaboration'
@@ -41,6 +42,7 @@ interface EditorNavbarProps {
   onSidebarToggle?: () => void
   showSidebar?: boolean
   onVersionRestore?: (content: string, title: string) => void
+  onSaveVersion?: (label: string) => void
   collaborators?: CollaboratorPresence[]
   typingUsers?: string[]
   isCollabConnected?: boolean
@@ -72,6 +74,7 @@ export default function EditorNavbar({
   onSidebarToggle,
   showSidebar,
   onVersionRestore,
+  onSaveVersion,
   collaborators = [],
   typingUsers = [],
   isCollabConnected = false,
@@ -83,6 +86,9 @@ export default function EditorNavbar({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState(false)
   const [editNameValue, setEditNameValue] = useState('')
+  const [compareVersions, setCompareVersions] = useState<{ old: string; new: string } | null>(null)
+  const [showSaveVersionPrompt, setShowSaveVersionPrompt] = useState(false)
+  const [saveVersionLabel, setSaveVersionLabel] = useState('')
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const fileNavRef = useRef<HTMLDivElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -198,6 +204,9 @@ export default function EditorNavbar({
           </button>
           <button onClick={() => setShowVersionHistory(true)} disabled={!currentDocId} className={`p-2 rounded-xl transition-all duration-300 disabled:opacity-20 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Version History">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+          </button>
+          <button onClick={() => setShowSaveVersionPrompt(true)} disabled={!currentDocId} className={`p-2 rounded-xl transition-all duration-300 disabled:opacity-20 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Save Version">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
           </button>
           <div className="relative" ref={exportMenuRef}>
             <button onClick={() => setShowExportMenu(!showExportMenu)} className={`p-2 rounded-xl transition-all duration-300 hover:-translate-y-0.5 active:scale-95 ${isDark ? 'text-neutral-500 hover:text-white' : 'text-[#9c958a] hover:text-[#2d2a26]'}`} title="Export">
@@ -356,14 +365,103 @@ export default function EditorNavbar({
     />
 
     {currentDocId && (
-      <VersionHistoryDialog
+      <VersionTimeline
         open={showVersionHistory}
         documentId={currentDocId}
+        userId={userId}
         isDark={isDark}
         onClose={() => setShowVersionHistory(false)}
         onRestore={(content, title) => { if (onVersionRestore) onVersionRestore(content, title) }}
+        onCompare={(oldId, newId) => {
+          setShowVersionHistory(false)
+          setCompareVersions({ old: oldId, new: newId })
+        }}
       />
     )}
+
+    {compareVersions && (
+      <DiffModal
+        open={!!compareVersions}
+        oldVersionId={compareVersions.old}
+        newVersionId={compareVersions.new}
+        isDark={isDark}
+        onClose={() => setCompareVersions(null)}
+      />
+    )}
+
+    {/* Save Version with Label prompt */}
+    <AnimatePresence>
+      {showSaveVersionPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => { setShowSaveVersionPrompt(false); setSaveVersionLabel('') }}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 5 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+            className={`relative w-full max-w-xs mx-4 rounded-xl border p-4 shadow-xl ${
+              isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-[#e8e4dc]'
+            }`}
+          >
+            <h3 className={`text-sm font-semibold mb-2 ${isDark ? 'text-white' : 'text-[#2d2a26]'}`}>
+              Save Version
+            </h3>
+            <input
+              autoFocus
+              value={saveVersionLabel}
+              onChange={(e) => setSaveVersionLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && saveVersionLabel.trim()) {
+                  onSaveVersion?.(saveVersionLabel.trim())
+                  setShowSaveVersionPrompt(false)
+                  setSaveVersionLabel('')
+                }
+                if (e.key === 'Escape') {
+                  setShowSaveVersionPrompt(false)
+                  setSaveVersionLabel('')
+                }
+              }}
+              placeholder="e.g. Before AI rewrite..."
+              className={`w-full text-sm px-3 py-2 rounded-lg border outline-none mb-3 ${
+                isDark
+                  ? 'bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-600 focus:border-neutral-500'
+                  : 'bg-[#f5f2ed] border-[#e8e4dc] text-[#2d2a26] placeholder:text-[#c5c0b8] focus:border-[#9c958a]'
+              }`}
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setShowSaveVersionPrompt(false); setSaveVersionLabel('') }}
+                className={`px-3 py-1.5 text-xs rounded-lg transition-all hover:scale-105 active:scale-95 ${
+                  isDark ? 'text-neutral-400 hover:text-white hover:bg-neutral-800' : 'text-[#5c574e] hover:text-[#2d2a26] hover:bg-[#f5f2ed]'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (saveVersionLabel.trim()) {
+                    onSaveVersion?.(saveVersionLabel.trim())
+                    setShowSaveVersionPrompt(false)
+                    setSaveVersionLabel('')
+                  }
+                }}
+                disabled={!saveVersionLabel.trim()}
+                className="px-3 py-1.5 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
     </>
   )
 }

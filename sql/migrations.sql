@@ -125,3 +125,60 @@ FOR ALL
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+-- Phase 7: Version History enhancements (Assignment #4)
+-- Add version_number, label, created_by columns
+ALTER TABLE document_versions
+  ADD COLUMN IF NOT EXISTS version_number INTEGER,
+  ADD COLUMN IF NOT EXISTS label TEXT,
+  ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id);
+
+-- Backfill existing rows with sequential version_number
+WITH numbered AS (
+  SELECT id,
+         ROW_NUMBER() OVER (PARTITION BY document_id ORDER BY created_at ASC) AS rn
+  FROM document_versions
+  WHERE version_number IS NULL
+)
+UPDATE document_versions
+SET version_number = numbered.rn
+FROM numbered
+WHERE document_versions.id = numbered.id;
+
+-- Backfill created_by from user_id for existing rows
+UPDATE document_versions
+SET created_by = user_id
+WHERE created_by IS NULL;
+
+-- Replace old RLS policies with granular ones
+DROP POLICY IF EXISTS "Users manage own versions" ON document_versions;
+
+-- SELECT: owner OR shared-edit collaborators
+CREATE POLICY "Version select: owner or shared-edit" ON document_versions FOR SELECT
+  USING (
+    auth.uid() = user_id
+    OR document_id IN (
+      SELECT document_id FROM document_shares
+      WHERE permission = 'edit'
+      AND (expires_at IS NULL OR expires_at > now())
+    )
+  );
+
+-- INSERT: owner OR shared-edit collaborators
+CREATE POLICY "Version insert: owner or shared-edit" ON document_versions FOR INSERT
+  WITH CHECK (
+    auth.uid() = user_id
+    OR document_id IN (
+      SELECT document_id FROM document_shares
+      WHERE permission = 'edit'
+      AND (expires_at IS NULL OR expires_at > now())
+    )
+  );
+
+-- DELETE: only document owner
+CREATE POLICY "Version delete: owner only" ON document_versions FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Set version_number NOT NULL and add unique constraint
+ALTER TABLE document_versions ALTER COLUMN version_number SET NOT NULL;
+ALTER TABLE document_versions ADD CONSTRAINT document_versions_doc_version_unique UNIQUE(document_id, version_number);

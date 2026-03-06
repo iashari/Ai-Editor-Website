@@ -18,7 +18,8 @@ import { useThrottle } from '@/hooks/useThrottle'
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
 import { motion, AnimatePresence } from '@/components/animations/MotionDiv'
 import LiveCursors from '@/components/LiveCursors'
-import { saveVersion } from '@/lib/versionHistory'
+import { createSnapshot } from '@/lib/versions'
+import { useAutoSnapshot } from '@/hooks/useAutoSnapshot'
 
 function useHistory(initialContent: string) {
   const [history, setHistory] = useState<string[]>([initialContent])
@@ -248,21 +249,13 @@ export default function EditorPage() {
     }
   }
 
-  // Auto-save versions throttled to max once every 5 minutes
-  const lastVersionTimeRef = useRef(0)
-  const VERSION_INTERVAL = 5 * 60 * 1000 // 5 minutes
-
+  // Auto-save document content to DB
   useAutoSave(currentDocId, documentContent, (status) => {
     setSaveStatus(status)
-    // On successful auto-save, also save a version if enough time has passed
-    if (status === 'saved' && currentDocId && user) {
-      const now = Date.now()
-      if (now - lastVersionTimeRef.current >= VERSION_INTERVAL) {
-        lastVersionTimeRef.current = now
-        saveVersion(currentDocId, user.id, docTitle, documentContent).catch(() => {})
-      }
-    }
   })
+
+  // Auto-snapshot every 30s (deduplicates internally)
+  const { saveNamedVersion } = useAutoSnapshot(currentDocId, user?.id, docTitle, documentContent)
   // Real-time collaboration
   const isReceivingRemoteRef = useRef(false)
   const {
@@ -333,10 +326,9 @@ export default function EditorPage() {
       setSaveStatus('saving')
       const { error } = await getSupabaseClient().from('documents').update({ content: documentContent, title: docTitle, updated_at: new Date().toISOString() }).eq('id', currentDocId)
       setSaveStatus(error ? 'error' : 'saved')
-      // Save a version snapshot on manual save (always, bypass throttle)
+      // Create a snapshot on manual save
       if (!error) {
-        lastVersionTimeRef.current = Date.now()
-        saveVersion(currentDocId, user.id, docTitle, documentContent).catch(() => {})
+        createSnapshot(currentDocId, documentContent, user.id).catch(() => {})
       }
     } catch (err) {
       if (err instanceof Error) console.error('Manual save failed:', err.message)
@@ -344,20 +336,17 @@ export default function EditorPage() {
     }
   }, [currentDocId, user, documentContent, docTitle])
 
-  const handleVersionRestore = useCallback(async (content: string, title: string) => {
+  const handleVersionRestore = useCallback((content: string, title: string) => {
     pushHistory(content)
     setDocTitle(title)
-    if (currentDocId) {
-      try {
-        setSaveStatus('saving')
-        const { error } = await getSupabaseClient().from('documents').update({ content, title, updated_at: new Date().toISOString() }).eq('id', currentDocId)
-        setSaveStatus(error ? 'error' : 'saved')
-      } catch (err) {
-        if (err instanceof Error) console.error('Version restore save failed:', err.message)
-        setSaveStatus('error')
-      }
-    }
-  }, [currentDocId, pushHistory])
+    setSaveStatus('saved')
+    broadcastContentChange(content)
+  }, [pushHistory, broadcastContentChange])
+
+  const handleSaveVersionWithLabel = useCallback(async (label: string) => {
+    if (!currentDocId || !user) return
+    await saveNamedVersion(label)
+  }, [currentDocId, user, saveNamedVersion])
 
   function exportAs(format: 'txt' | 'md' | 'html' | 'doc' | 'pdf') {
     const title = docTitle || 'document'
@@ -490,6 +479,7 @@ export default function EditorPage() {
         onSidebarToggle={() => setShowSidebar(!showSidebar)}
         showSidebar={showSidebar}
         onVersionRestore={handleVersionRestore}
+        onSaveVersion={handleSaveVersionWithLabel}
         collaborators={collaborators}
         typingUsers={typingUsers}
         isCollabConnected={isCollabConnected}
